@@ -18,46 +18,58 @@ class EKGProcessor:
         self.filtered_data = None
         self.peaks = None
 
-    # ✅ UPDATED load_data to support .txt, .csv, and 2-column files
     def load_data(self, data_or_path):
         """
         Load EKG data from file path or numpy array.
 
         Supports:
         - .txt (1 or 2 columns)
-        - .csv (1 or 2 columns)
+        - .csv (1 or 2 columns with or without headers)
         - .npy
         - raw numpy array already in memory
         """
+        import pandas as pd
 
-        # Case 1: data is a numpy array already
         if isinstance(data_or_path, np.ndarray):
             self.raw_data = data_or_path
+            return
 
-        # Case 2: file path
-        else:
-            path = str(data_or_path)
+        path = str(data_or_path)
 
-            if path.endswith(".npy"):
-                self.raw_data = np.load(path)
+        # --- .npy files ---
+        if path.endswith(".npy"):
+            self.raw_data = np.load(path)
+            return
 
+        # --- CSV or TXT ---
+        try:
+            # Try with pandas (handles headers automatically)
+            df = pd.read_csv(path, comment="#")  # ignore comment lines if present
+            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+
+            if not numeric_cols:
+                raise ValueError("No numeric columns found in file.")
+
+            # ✅ If two columns (time, amplitude), use second
+            if len(numeric_cols) >= 2:
+                data = df[numeric_cols[1]].to_numpy(dtype=float)
             else:
-                # Load CSV/TXT (1 or 2 columns)
-                try:
-                    data = np.loadtxt(path, delimiter=",")
+                data = df[numeric_cols[0]].to_numpy(dtype=float)
 
-                except ValueError:
-                    # If delimiter doesn't work (space-separated)
-                    data = np.loadtxt(path)
+            self.raw_data = data
+            self.filtered_data = None
+            self.peaks = None
+            return
 
-                # If 2 columns, take the 2nd (amplitude)
+        except Exception as e:
+            # Fallback to numpy only if pandas fails
+            try:
+                data = np.genfromtxt(path, delimiter=",", comments="#", skip_header=1)
                 if data.ndim > 1 and data.shape[1] >= 2:
                     data = data[:, 1]
-
                 self.raw_data = data
-
-        if self.raw_data is None or len(self.raw_data) == 0:
-            raise ValueError("Failed to load EKG data — data is empty.")
+            except Exception as err:
+                raise RuntimeError(f"Failed to load file: {err}")
 
         # Reset pipeline
         self.filtered_data = None
