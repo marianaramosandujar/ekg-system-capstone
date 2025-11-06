@@ -97,7 +97,7 @@ class EKGApp(QWidget):
             self.processor.load_data(path)
             self.data = self.processor.raw_data
 
-            self.label.setText(f"✅ Loaded file: {path.split('/')[-1]}")
+            self.label.setText(f"Loaded file: {path.split('/')[-1]}")
             self.analyze_btn.setEnabled(True)
             self.clinical_btn.setEnabled(True)
 
@@ -110,7 +110,7 @@ class EKGApp(QWidget):
             self.plot_widget.plot(time_axis, self.data, pen='b', name="Raw EKG")
 
         except Exception as e:
-            self.label.setText(f"❌ Failed to load file: {e}")
+            self.label.setText(f" Failed to load file: {e}")
             self.analyze_btn.setEnabled(False)
 
     def analyze_signal(self):
@@ -144,7 +144,7 @@ class EKGApp(QWidget):
             )
 
         except Exception as e:
-            self.label.setText(f"❌ Error: {e}")
+            self.label.setText(f"Error: {e}")
 
     def show_clinical_view(self):
         if self.data is None:
@@ -154,7 +154,7 @@ class EKGApp(QWidget):
         try:
             plot_clinical_ecg(self.data, fs=1000, seconds=10)
         except Exception as e:
-            self.label.setText(f"❌ Error showing clinical view: {e}")
+            self.label.setText(f"Error showing clinical view: {e}")
 
 
 if __name__ == "__main__":
