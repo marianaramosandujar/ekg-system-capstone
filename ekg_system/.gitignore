@@ -40,7 +40,7 @@ htmlcov/
 # Data files
 *.dat
 *.csv
-data/
+!lab_data/*.csv
 sessions/
 reports/
 
