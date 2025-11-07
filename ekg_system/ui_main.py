@@ -7,11 +7,12 @@ from PySide6.QtCore import Qt
 import pyqtgraph as pg
 
 from ekg_system.processor import EKGProcessor
+from ekg_system.clinical_plot import plot_clinical_ecg
+
 import ekg_system.processor
 print("Loaded processor from:", ekg_system.processor.__file__)
 
 from ekg_system.arrhythmia_detector import ArrhythmiaDetector
-from clinical_plot import plot_clinical_ecg
 
 
 class EKGApp(QWidget):
@@ -79,7 +80,7 @@ class EKGApp(QWidget):
         self.plot_widget.enableAutoRange('xy', True)
         self.plot_widget.setLabel('bottom', 'Time', units='s')
         self.plot_widget.setLabel('left', 'Amplitude', units='mV')
-        self.plot_widget.setTitle('Mouse EKG Signal', color='black', size='16pt')
+        
 
         main_layout.addWidget(self.plot_widget)
         self.setLayout(main_layout)
