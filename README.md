@@ -3,7 +3,6 @@
 This project is an interactive Python application for analyzing and visualizing EKG data.  
 It allows researchers and engineers to process EKG signals, detect arrhythmias, and visualize the results through an intuitive GUI.
 
-
 ##  Setup Instructions
 
 ### 1. Clone the repository

@@ -5,7 +5,7 @@ import sys
 import numpy as np
 from pathlib import Path
 
-from .processor import EKGProcessor
+from ekg_system.processor import EKGProcessor
 from .arrhythmia_detector import ArrhythmiaDetector
 from .visualizer import EKGVisualizer
 from .session_manager import SessionManager
