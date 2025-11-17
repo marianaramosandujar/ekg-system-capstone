@@ -1,5 +1,4 @@
-"""Microcontroller connectivity for live EKG data acquisition."""
-
+# Connects to the microcontroller and pulls live EKG values over serial
 import serial
 import numpy as np
 import time
@@ -8,17 +7,8 @@ import threading
 
 
 class MicrocontrollerInterface:
-    """Interface for connecting to microcontroller for live EKG data."""
-    
+    # Handles serial connection + reading data for live mode
     def __init__(self, port: str, baudrate: int = 115200, sampling_rate: int = 1000):
-        """
-        Initialize microcontroller interface.
-        
-        Args:
-            port: Serial port (e.g., 'COM3' on Windows, '/dev/ttyUSB0' on Linux)
-            baudrate: Serial communication baud rate
-            sampling_rate: Expected sampling rate in Hz
-        """
         self.port = port
         self.baudrate = baudrate
         self.sampling_rate = sampling_rate
@@ -29,19 +19,14 @@ class MicrocontrollerInterface:
         self.stream_thread = None
         
     def connect(self) -> bool:
-        """
-        Establish connection to microcontroller.
-        
-        Returns:
-            True if connection successful, False otherwise
-        """
+        # tries to open the serial port
         try:
             self.serial_conn = serial.Serial(
                 port=self.port,
                 baudrate=self.baudrate,
                 timeout=1
             )
-            time.sleep(2)  # Wait for connection to stabilize
+            time.sleep(2)  # some boards need a moment before sending data
             self.is_connected = True
             print(f"Connected to microcontroller on {self.port}")
             return True
@@ -51,7 +36,7 @@ class MicrocontrollerInterface:
             return False
             
     def disconnect(self) -> None:
-        """Close connection to microcontroller."""
+        # shut down the port cleanly
         self.stop_streaming()
         if self.serial_conn and self.serial_conn.is_open:
             self.serial_conn.close()
@@ -59,33 +44,21 @@ class MicrocontrollerInterface:
             print("Disconnected from microcontroller")
             
     def read_sample(self) -> Optional[float]:
-        """
-        Read a single EKG sample from microcontroller.
-        
-        Returns:
-            EKG value as float, or None if read failed
-        """
+        # reads one value from serial, assumes the MCU sends plain numeric text
         if not self.is_connected:
             raise ConnectionError("Not connected to microcontroller")
             
         try:
             line = self.serial_conn.readline().decode('utf-8').strip()
             if line:
-                # Assume data is sent as numeric value
                 return float(line)
-        except (ValueError, UnicodeDecodeError) as e:
-            print(f"Error reading sample: {e}")
+        except (ValueError, UnicodeDecodeError):
+            # sometimes bad characters come through → skip instead of crashing
             return None
             
     def start_streaming(self, callback: Optional[Callable[[float], None]] = None,
                        duration: Optional[float] = None) -> None:
-        """
-        Start streaming EKG data from microcontroller.
-        
-        Args:
-            callback: Optional function to call with each new sample
-            duration: Optional duration in seconds (None for continuous)
-        """
+        # pulls a continuous stream of samples
         if not self.is_connected:
             raise ConnectionError("Not connected to microcontroller")
             
@@ -97,6 +70,7 @@ class MicrocontrollerInterface:
         self.buffer = []
         
         def stream_worker():
+            # loop until time is up or user stops
             start_time = time.time()
             while self.is_streaming:
                 if duration and (time.time() - start_time) >= duration:
@@ -110,17 +84,13 @@ class MicrocontrollerInterface:
                         
             self.is_streaming = False
             
+        # thread lets UI stay responsive while samples come in
         self.stream_thread = threading.Thread(target=stream_worker, daemon=True)
         self.stream_thread.start()
         print("Started streaming EKG data")
         
     def stop_streaming(self) -> np.ndarray:
-        """
-        Stop streaming and return collected data.
-        
-        Returns:
-            Array of collected EKG samples
-        """
+        # ends the thread and returns whatever data is collected so far
         if self.is_streaming:
             self.is_streaming = False
             if self.stream_thread:
@@ -130,28 +100,15 @@ class MicrocontrollerInterface:
         return np.array(self.buffer)
         
     def get_buffer(self) -> np.ndarray:
-        """
-        Get current buffer contents without stopping stream.
-        
-        Returns:
-            Array of collected EKG samples
-        """
+        # check current collected values without stopping
         return np.array(self.buffer)
         
     def clear_buffer(self) -> None:
-        """Clear the data buffer."""
+        # resets live stream history
         self.buffer = []
         
     def send_command(self, command: str) -> Optional[str]:
-        """
-        Send command to microcontroller.
-        
-        Args:
-            command: Command string to send
-            
-        Returns:
-            Response from microcontroller, or None if failed
-        """
+        # sends a simple command to the MCU and waits for a reply
         if not self.is_connected:
             raise ConnectionError("Not connected to microcontroller")
             
@@ -166,12 +123,7 @@ class MicrocontrollerInterface:
             
     @staticmethod
     def list_available_ports() -> list:
-        """
-        List available serial ports.
-        
-        Returns:
-            List of available port names
-        """
+        # lists the COM ports so user can pick the right one
         import serial.tools.list_ports
         ports = serial.tools.list_ports.comports()
         return [port.device for port in ports]

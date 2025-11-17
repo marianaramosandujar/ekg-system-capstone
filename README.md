@@ -26,4 +26,4 @@ pip install -r requirements.txt
 
 ### 3. Run UI
 
-python3 ekg_system/ui_main.py
+python3 ui_main.py

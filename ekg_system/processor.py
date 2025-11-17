@@ -1,33 +1,20 @@
-"""
-EKG signal processor module.
-"""
+# This file handles the actual EKG signal processing step-by-step
+# Used by the UI when you hit Analyze
 
 import numpy as np
 from scipy.signal import butter, filtfilt, find_peaks
 
 
 class EKGProcessor:
+    # holds the raw signal, filtered version, and detected peaks
     def __init__(self, sampling_rate: int = 1000):
-        """
-        Initialize EKG processor.
-        Args:
-            sampling_rate: Sampling rate in Hz
-        """
         self.sampling_rate = sampling_rate
         self.raw_data = None
         self.filtered_data = None
         self.peaks = None
 
     def load_data(self, data_or_path):
-        """
-        Load EKG data from file path or numpy array.
-
-        Supports:
-        - .txt (1 or 2 columns)
-        - .csv (1 or 2 columns with or without headers)
-        - .npy
-        - raw numpy array already in memory
-        """
+        # loads data either from a filename or already-loaded numpy array
         import pandas as pd
 
         if isinstance(data_or_path, np.ndarray):
@@ -36,21 +23,20 @@ class EKGProcessor:
 
         path = str(data_or_path)
 
-        # --- .npy files ---
+        # faster loading for numpy saved files
         if path.endswith(".npy"):
             self.raw_data = np.load(path)
             return
 
-        # --- CSV or TXT ---
+        # csv/txt load using pandas (handles headers if present)
         try:
-            # Try with pandas (handles headers automatically)
-            df = pd.read_csv(path, comment="#")  # ignore comment lines if present
+            df = pd.read_csv(path, comment="#")
             numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
 
             if not numeric_cols:
-                raise ValueError("No numeric columns found in file.")
+                raise ValueError("No numeric columns found")
 
-            # ✅ If two columns (time, amplitude), use second
+            # some datasets include time + amplitude → use the amplitude column
             if len(numeric_cols) >= 2:
                 data = df[numeric_cols[1]].to_numpy(dtype=float)
             else:
@@ -61,8 +47,8 @@ class EKGProcessor:
             self.peaks = None
             return
 
-        except Exception as e:
-            # Fallback to numpy only if pandas fails
+        except Exception:
+            # fallback loader for messy csv/txt files
             try:
                 data = np.genfromtxt(path, delimiter=",", comments="#", skip_header=1)
                 if data.ndim > 1 and data.shape[1] >= 2:
@@ -71,10 +57,10 @@ class EKGProcessor:
             except Exception as err:
                 raise RuntimeError(f"Failed to load file: {err}")
 
-        # Reset pipeline
         self.filtered_data = None
         self.peaks = None
 
+    # helper for making the filter coefficients
     def butter_bandpass(self, lowcut, highcut, order=4):
         nyquist = 0.5 * self.sampling_rate
         low = lowcut / nyquist
@@ -82,29 +68,37 @@ class EKGProcessor:
         return butter(order, [low, high], btype='band')
 
     def filter_signal(self, lowcut=1.0, highcut=100.0):
+        # apply a bandpass filter to remove noise + baseline drift
         if self.raw_data is None:
-            raise ValueError("No data loaded. Call load_data() first.")
+            raise ValueError("No data loaded")
 
         b, a = self.butter_bandpass(lowcut, highcut)
         self.filtered_data = filtfilt(b, a, self.raw_data)
 
     def detect_r_peaks(self, height_factor=0.5, distance_ms=50):
+        # basic peak picking using scipy's find_peaks
         if self.filtered_data is None:
-            raise ValueError("Signal not filtered. Call filter_signal() first.")
+            raise ValueError("Signal not filtered yet")
 
         distance_samples = int((distance_ms / 1000.0) * self.sampling_rate)
         threshold = np.max(self.filtered_data) * height_factor
 
-        peaks, _ = find_peaks(self.filtered_data, height=threshold, distance=distance_samples)
+        # returns peak indices where heart beats occur
+        peaks, _ = find_peaks(
+            self.filtered_data,
+            height=threshold,
+            distance=distance_samples
+        )
         self.peaks = peaks
         return peaks
 
     def calculate_heart_rate(self):
+        # uses time difference between peaks = RR intervals
         if self.peaks is None or len(self.peaks) < 2:
-            raise ValueError("Not enough peaks to calculate heart rate.")
+            raise ValueError("Not enough peaks")
 
         rr_intervals = np.diff(self.peaks) / self.sampling_rate
-        heart_rates = 60.0 / rr_intervals
+        heart_rates = 60.0 / rr_intervals  # convert seconds → bpm
 
         return {
             "mean": np.mean(heart_rates),
@@ -114,8 +108,9 @@ class EKGProcessor:
         }
 
     def segment_waveforms(self, window_before=50, window_after=100):
+        # extracts little windows around each beat to look for arrhythmias
         if self.peaks is None:
-            raise ValueError("No peaks detected.")
+            raise ValueError("No peaks detected")
 
         waveforms = []
         for peak in self.peaks:
