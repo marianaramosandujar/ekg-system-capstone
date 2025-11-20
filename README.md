@@ -8,9 +8,10 @@ It allows researchers and engineers to process EKG signals, detect arrhythmias, 
 ### 1. Clone the repository
 
 git clone https://github.com/marianaramosandujar/ekg-system-capstone.git
-cd ekg-system-capstone
+
 
 ### 2. Activate virtual environment 
+cd ekg-system-capstone
 
 Window:
 python3 -m venv venv  
