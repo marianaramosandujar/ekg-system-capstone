@@ -138,7 +138,11 @@ class EKGApp(QWidget):
         fs = self.processor.sampling_rate
         t = np.arange(len(self.data)) / fs
         self.plot_widget.clear()
-        self.plot_widget.plot(t, self.data, pen='b')
+        self.plot_widget.plot(
+            t,
+            self.data,
+            pen=pg.mkPen(color='black', width=1)
+        )
 
     def analyze_signal(self):
         if self.data is None:
@@ -172,11 +176,22 @@ class EKGApp(QWidget):
 
             # plot filtered data + peaks
             self.plot_widget.clear()
-            self.plot_widget.plot(t, self.processor.filtered_data, pen='b')
+
+            # ECG waveform in black
+            self.plot_widget.plot(
+                t,
+                self.processor.filtered_data,
+                pen=pg.mkPen(color='black', width=1)
+            )
+
+            # Peaks in red
             self.plot_widget.plot(
                 self.processor.peaks / fs,
                 self.processor.filtered_data[self.processor.peaks],
-                pen=None, symbol='o', symbolBrush='r'
+                pen=None,
+                symbol='o',
+                symbolBrush='r',
+                symbolSize=8
             )
 
         except Exception as e:
