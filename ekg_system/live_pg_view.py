@@ -1,126 +1,148 @@
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton
-from PySide6.QtCore import QTimer
+
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel
+from PySide6.QtCore import QTimer, Qt
+
+from ekg_system.microcontroller import MSP430Interface
 
 
-class LiveECGView(QWidget):
-    # live scrolling ECG display using a moving data window
-    def __init__(self, parent=None, signal=None, fs=1000, window_sec=10):
+class LivePGView(QWidget):
+    """
+    Live View tab:
+    - Always shows Start / Stop button
+    - Detects MSP430 USB CDC automatically
+    - Sends START / STOP commands
+    - Displays live ECG data
+    """
+
+    def __init__(self, parent=None, fs=1000, window_sec=5):
         super().__init__(parent)
 
-        self.signal = np.asarray(signal, dtype=float)
+        # -------------------------
+        # Signal buffer
+        # -------------------------
         self.fs = fs
-        self.window_sec = window_sec
+        self.n = int(fs * window_sec)
+        self.buffer = np.zeros(self.n)
 
-        # number of samples that fit on screen at once
-        self.n_window = int(self.fs * self.window_sec)
-        self.idx = 0  # keeps track of where we are in the dataset
+        # -------------------------
+        # Hardware interface
+        # -------------------------
+        self.mcu = MSP430Interface()
+        self.device_connected = False
+        self.collecting = False
+        self.want_collecting = False
 
-        main_layout = QVBoxLayout(self)
+        # -------------------------
+        # Layout
+        # -------------------------
+        layout = QVBoxLayout(self)
 
-        # main plot widget for waveform only (no labels)
+        # Status label
+        self.status = QLabel("Waiting for device…")
+        self.status.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.status)
+
+        # Plot
         self.plot = pg.PlotWidget()
-        main_layout.addWidget(self.plot)
+        self.plot.setBackground("w")
+        self.plot.showGrid(x=True, y=True)
+        self.curve = self.plot.plot(self.buffer, pen=pg.mkPen("k", width=1))
+        layout.addWidget(self.plot)
 
-        self.plot.setBackground('w')
-        self.plot.showGrid(x=True, y=True, alpha=0.25)
-        self.plot.setMouseEnabled(x=False, y=False)
-        self.plot.setMenuEnabled(False)
-        self.plot.enableAutoRange(False, False)
+        # Start / Stop button (ALWAYS enabled)
+        self.button = QPushButton("Start Collecting")
+        self.button.clicked.connect(self.toggle_collection)
+        layout.addWidget(self.button)
 
-        p = self.plot.getPlotItem()
-        p.hideAxis('bottom')
-        p.hideAxis('left')
+        # -------------------------
+        # Plot update timer
+        # -------------------------
+        self.plot_timer = QTimer(self)
+        self.plot_timer.timeout.connect(self.update_plot)
+        self.plot_timer.start(30)
 
-        # fixed time axis so time always moves forward left → right
-        self.time_axis = np.linspace(0, self.window_sec, self.n_window, endpoint=False)
-        self.plot.setXRange(0, self.window_sec, padding=0)
+        # -------------------------
+        # Device detection timer
+        # -------------------------
+        self.detect_timer = QTimer(self)
+        self.detect_timer.timeout.connect(self.check_device)
+        self.detect_timer.start(1000)
 
-        # create circular buffer (what is shown on screen)
-        self.buffer = np.zeros(self.n_window)
-        initial = min(self.n_window, len(self.signal))
+    # --------------------------------------------------
+    # Detect MSP430 USB CDC
+    # --------------------------------------------------
+    def check_device(self):
+        if not self.device_connected:
+            port = self.mcu.detect_port()
+            if port:
+                self.device_connected = True
+                self.status.setText("MSP430 detected")
 
-        # load the first chunk of data
-        if initial > 0:
-            self.buffer[-initial:] = self.signal[:initial]
-            self.idx = initial
+                # Auto-start if user already pressed Start
+                if self.want_collecting and not self.collecting:
+                    self.start_hardware()
 
-        # y-limits stay constant so it doesn’t bounce
-        if len(self.signal) > 0:
-            self.sig_min = float(np.min(self.signal))
-            self.sig_max = float(np.max(self.signal))
+    # --------------------------------------------------
+    # Start / Stop button logic (intent-based)
+    # --------------------------------------------------
+    def toggle_collection(self):
+        self.want_collecting = not self.want_collecting
+
+        if self.want_collecting:
+            self.button.setText("Stop Collecting")
+            self.status.setText("Waiting for device…")
+
+            if self.device_connected:
+                self.start_hardware()
         else:
-            self.sig_min, self.sig_max = -1, 1
+            self.button.setText("Start Collecting")
+            self.stop_hardware()
 
-        self.plot.setYRange(self.sig_min, self.sig_max)
+    # --------------------------------------------------
+    # Hardware control
+    # --------------------------------------------------
+    def start_hardware(self):
+        try:
+            self.mcu.start(self.on_serial_line)
+            self.collecting = True
+            self.status.setText("Collecting data…")
+        except Exception:
+            self.status.setText("Waiting for device…")
+            self.collecting = False
 
-        # plot line object
-        self.curve = self.plot.plot(
-            self.time_axis,
-            self.buffer,
-            pen=pg.mkPen('k', width=1)
-        )
+    def stop_hardware(self):
+        if self.collecting:
+            self.mcu.stop()
 
-        # live toggle button at bottom
-        controls = QHBoxLayout()
-        controls.addStretch()
+        self.collecting = False
+        self.status.setText("Collection stopped")
 
-        self.start_stop_btn = QPushButton("Start Live")
-        self.start_stop_btn.setFixedHeight(36)
-        self.start_stop_btn.clicked.connect(self.toggle_stream)
+    # --------------------------------------------------
+    # Serial data callback
+    # --------------------------------------------------
+    def on_serial_line(self, line):
+        try:
+            # Accept "value" or "timestamp,value"
+            value = float(line.split(",")[-1])
 
-        controls.addWidget(self.start_stop_btn)
-        main_layout.addLayout(controls)
+            self.buffer[:-1] = self.buffer[1:]
+            self.buffer[-1] = value
+        except ValueError:
+            pass
 
-        # timer calls update function ~50fps (20ms)
-        self.timer = QTimer(self)
-        self.timer.setInterval(20)
-        self.timer.timeout.connect(self._update_stream)
+    # --------------------------------------------------
+    # Plot refresh
+    # --------------------------------------------------
+    def update_plot(self):
+        self.curve.setData(self.buffer)
 
-    # pressing the button starts or stops the stream
-    def toggle_stream(self):
-        if self.timer.isActive():
-            self.stop()
-        else:
-            self.start()
-
-    def start(self):
-        if not self.timer.isActive():
-            self.timer.start()
-            self.start_stop_btn.setText("Stop Live")
-
+    # --------------------------------------------------
+    # Cleanup when leaving Live View / closing app
+    # --------------------------------------------------
     def stop(self):
-        if self.timer.isActive():
-            self.timer.stop()
-        self.start_stop_btn.setText("Start Live")
-
-    # pulls next chunk of samples and shifts left
-    def _update_stream(self):
-        if len(self.signal) == 0:
-            self.stop()
-            return
-
-        # how many samples to move each frame
-        step = max(1, int(self.fs * (self.timer.interval() / 1000.0)))
-
-        end = self.idx + step
-        # wrap around if we hit the end (simulation loop)
-        if end <= len(self.signal):
-            new_samples = self.signal[self.idx:end]
-            self.idx = end
-        else:
-            part1 = self.signal[self.idx:]
-            remain = end - len(self.signal)
-            part2 = self.signal[:remain]
-            new_samples = np.concatenate([part1, part2])
-            self.idx = remain
-
-        # push old samples left, add new ones on right side
-        self.buffer = np.roll(self.buffer, -len(new_samples))
-        self.buffer[-len(new_samples):] = new_samples
-
-        # update the visual graph
-        self.curve.setData(self.time_axis, self.buffer)
-        self.plot.setXRange(0, self.window_sec, padding=0)
-        self.plot.setYRange(self.sig_min, self.sig_max)
+        self.want_collecting = False
+        self.stop_hardware()
+        self.button.setText("Start Collecting")
+        self.status.setText("Collection stopped")
