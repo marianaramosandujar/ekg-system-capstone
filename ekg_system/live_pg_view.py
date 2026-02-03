@@ -104,6 +104,8 @@ class LivePGView(QWidget):
     # Hardware control
     # --------------------------------------------------
     def start_hardware(self):
+        if self.collecting:
+            return
         try:
             self.mcu.start(self.on_serial_line)
             self.collecting = True

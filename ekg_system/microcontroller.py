@@ -1,80 +1,83 @@
 import serial
-import serial.tools.list_ports
 import threading
+from serial.tools import list_ports
 
 
 class MSP430Interface:
-    """
-    Handles:
-    - Detecting MSP430 USB CDC
-    - Sending START / STOP commands
-    - Reading streamed CSV data
-    """
-
     def __init__(self, baudrate=115200):
         self.baudrate = baudrate
         self.port = None
-        self.ser = None
-        self.collecting = False
+        self.serial = None
         self.thread = None
+        self.running = False
+        self.callback = None
 
-    # ----------------------------------------
-    # Detect MSP430 USB CDC device
-    # ----------------------------------------
+    # ---------------------------------------
+    # Detect MSP430 USB CDC (Windows-safe)
+    # ---------------------------------------
     def detect_port(self):
-        for p in serial.tools.list_ports.comports():
+        for p in list_ports.comports():
             desc = (p.description or "").lower()
-            manuf = (p.manufacturer or "").lower()
 
             if (
                 "msp430" in desc
-                or "usb cdc" in desc
-                or "texas instruments" in manuf
+                or "ti" in desc
+                or "usb serial" in desc
             ):
-                self.port = p.device
-                return p.device
+                self.port = p.device  # e.g. COM5
+                return self.port
+
         return None
 
-    # ----------------------------------------
-    # Start data collection (send START)
-    # ----------------------------------------
+    # ---------------------------------------
+    # Start serial streaming (single-open)
+    # ---------------------------------------
     def start(self, callback):
-        if self.collecting:
+        # Prevent reopening the port
+        if self.serial and self.serial.is_open:
             return
 
         if not self.port:
-            raise RuntimeError("MSP430 not detected")
+            raise RuntimeError("No MSP430 port detected")
 
-        self.ser = serial.Serial(self.port, self.baudrate, timeout=1)
+        self.serial = serial.Serial(
+            self.port,
+            self.baudrate,
+            timeout=1
+        )
 
-        # Tell MSP430 to begin streaming
-        self.ser.write(b"START\n")
+        self.callback = callback
+        self.running = True
 
-        self.collecting = True
-
-        def read_loop():
-            while self.collecting:
-                try:
-                    line = self.ser.readline().decode(errors="ignore").strip()
-                    if line:
-                        callback(line)
-                except Exception:
-                    break
-
-        self.thread = threading.Thread(target=read_loop, daemon=True)
+        self.thread = threading.Thread(
+            target=self._read_loop,
+            daemon=True
+        )
         self.thread.start()
 
-    # ----------------------------------------
-    # Stop data collection (send STOP)
-    # ----------------------------------------
-    def stop(self):
-        self.collecting = False
-
-        if self.ser:
+    # ---------------------------------------
+    # Read loop
+    # ---------------------------------------
+    def _read_loop(self):
+        while self.running and self.serial and self.serial.is_open:
             try:
-                self.ser.write(b"STOP\n")
+                line = self.serial.readline().decode(errors="ignore").strip()
+                if line and self.callback:
+                    self.callback(line)
+            except Exception:
+                break
+
+    # ---------------------------------------
+    # Stop streaming and close port
+    # ---------------------------------------
+    def stop(self):
+        self.running = False
+
+        if self.serial:
+            try:
+                if self.serial.is_open:
+                    self.serial.close()
             except Exception:
                 pass
 
-            self.ser.close()
-            self.ser = None
+        self.serial = None
