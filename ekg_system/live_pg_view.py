@@ -128,16 +128,19 @@ class LivePGView(QWidget):
     # --------------------------------------------------
     # Hardware control
     # --------------------------------------------------
-def start_hardware(self):
-    if self.collecting:
-        return
-    try:
-        self.mcu.start(self.on_serial_line)
-        self.collecting = True
-        self.status.setText("Collecting data…")
-    except Exception as e:
-        self.status.setText(f"Serial start failed: {e}")
-        self.collecting = False
+    # --------------------------------------------------
+    # Hardware control
+    # --------------------------------------------------
+    def start_hardware(self):
+        if self.collecting:
+            return
+        try:
+            self.mcu.start(self.on_serial_line)
+            self.collecting = True
+            self.status.setText("Collecting data…")
+        except Exception as e:
+            self.status.setText(f"Serial start failed: {e}")
+            self.collecting = False
 
     def stop_hardware(self):
         if self.collecting:
@@ -150,28 +153,26 @@ def start_hardware(self):
     # Serial callback (background thread)
     # Push parsed data into queue; do NOT touch numpy buffers here.
     # --------------------------------------------------
-def on_serial_line(self, line: str):
-    print("UI RX:", line)  # <-- add this line
+    def on_serial_line(self, line: str):
+        print("UI RX:", line)
 
-    # Expect: sample_id, timestamp, status, ch1, ch2
-    parts = line.split(",")
-    if len(parts) < 5:
-        return
+        parts = line.split(",")
+        if len(parts) < 5:
+            return
 
-    try:
-        timestamp = float(parts[1].strip())
-        ch1 = float(parts[3].strip())
-        ch2 = float(parts[4].strip())
-    except ValueError:
-        return
+        try:
+            timestamp = float(parts[1].strip())
+            ch1 = float(parts[3].strip())
+            ch2 = float(parts[4].strip())
+        except ValueError:
+            return
 
-    self._q.put((timestamp, ch1, ch2))
+        self._q.put((timestamp, ch1, ch2))
 
     # --------------------------------------------------
     # GUI timer: drain queue -> write ring buffers -> plot
     # --------------------------------------------------
     def update_plot(self):
-        # Drain as much as available (keeps up at higher rates)
         drained = 0
         while True:
             try:
@@ -190,11 +191,9 @@ def on_serial_line(self, line: str):
 
             drained += 1
 
-        # Nothing new, don't redraw
         if drained == 0:
             return
 
-        # Build ordered view of the ring buffer
         if self._filled:
             idx = self._write_idx
             t = np.concatenate((self.t_buf[idx:], self.t_buf[:idx]))
@@ -205,7 +204,6 @@ def on_serial_line(self, line: str):
             y1 = self.ch1_buf[:self._write_idx]
             y2 = self.ch2_buf[:self._write_idx]
 
-        # Remove NaNs (startup) to avoid odd autoscaling
         mask = np.isfinite(t) & np.isfinite(y1) & np.isfinite(y2)
         t = t[mask]
         y1 = y1[mask]
