@@ -52,24 +52,25 @@ class LivePGView(QWidget):
         self.status.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.status)
 
-        # Plot 1
+        # Plot 1 (CH1)
         self.plot1 = pg.PlotWidget()
         self.plot1.setBackground("w")
         self.plot1.showGrid(x=True, y=True)
         self.plot1.setLabel("bottom", "Timestamp (col 2)")
         self.plot1.setLabel("left", "CH1 (col 4)")
-        self.curve1 = self.plot1.plot([], [], pen=pg.mkPen("k", width=1))
+        self.curve1 = self.plot1.plot([], [], pen=pg.mkPen("r", width=2))
         layout.addWidget(self.plot1)
 
-        # Plot 2
+        # Plot 2 (CH2)
         self.plot2 = pg.PlotWidget()
         self.plot2.setBackground("w")
         self.plot2.showGrid(x=True, y=True)
         self.plot2.setLabel("bottom", "Timestamp (col 2)")
         self.plot2.setLabel("left", "CH2 (col 5)")
-        self.curve2 = self.plot2.plot([], [], pen=pg.mkPen("k", width=1))
+        self.curve2 = self.plot2.plot([], [], pen=pg.mkPen("r", width=2))
         layout.addWidget(self.plot2)
 
+        # Temporary Y-range (because firmware is constant)
         self.plot1.setYRange(-8000000, -6000000)
         self.plot2.setYRange(4000000, 7000000)
 
@@ -87,11 +88,14 @@ class LivePGView(QWidget):
         self.detect_timer.timeout.connect(self.check_device)
         self.detect_timer.start(1000)
 
-        # If EKG_PORT is set, treat as "detected"
+        # If EKG_PORT env var is set, treat as detected
         if self.mcu.port:
             self.device_connected = True
             self.status.setText(f"MSP430 set to {self.mcu.port}")
 
+    # --------------------------------------------------
+    # Device detection
+    # --------------------------------------------------
     def check_device(self):
         if not self.device_connected:
             port = self.mcu.detect_port()
@@ -101,8 +105,12 @@ class LivePGView(QWidget):
                 if self.want_collecting and not self.collecting:
                     self.start_hardware()
 
+    # --------------------------------------------------
+    # Start / Stop button
+    # --------------------------------------------------
     def toggle_collection(self):
         self.want_collecting = not self.want_collecting
+
         if self.want_collecting:
             self.button.setText("Stop Collecting")
             self.status.setText("Waiting for device…")
@@ -112,6 +120,9 @@ class LivePGView(QWidget):
             self.button.setText("Start Collecting")
             self.stop_hardware()
 
+    # --------------------------------------------------
+    # Hardware control
+    # --------------------------------------------------
     def start_hardware(self):
         if self.collecting:
             return
@@ -129,10 +140,10 @@ class LivePGView(QWidget):
         self.collecting = False
         self.status.setText("Collection stopped")
 
+    # --------------------------------------------------
     # Serial callback (background thread)
+    # --------------------------------------------------
     def on_serial_line(self, line: str):
-        # print("UI RX:", line, flush=True)  # uncomment if you want spam
-
         parts = line.split(",")
         if len(parts) < 5:
             return
@@ -145,9 +156,12 @@ class LivePGView(QWidget):
 
         self._q.put((timestamp, ch1, ch2))
 
+    # --------------------------------------------------
     # GUI timer (main thread)
+    # --------------------------------------------------
     def update_plot(self):
         drained = 0
+
         while True:
             try:
                 timestamp, ch1, ch2 = self._q.get_nowait()
@@ -186,6 +200,9 @@ class LivePGView(QWidget):
         self.curve1.setData(t, y1)
         self.curve2.setData(t, y2)
 
+    # --------------------------------------------------
+    # Cleanup
+    # --------------------------------------------------
     def stop(self):
         self.want_collecting = False
         self.stop_hardware()
