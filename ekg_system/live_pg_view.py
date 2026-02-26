@@ -70,6 +70,9 @@ class LivePGView(QWidget):
         self.curve2 = self.plot2.plot([], [], pen=pg.mkPen("k", width=1))
         layout.addWidget(self.plot2)
 
+        self.plot1.setYRange(-8000000, -6000000)
+        self.plot2.setYRange(4000000, 7000000)
+
         # Button
         self.button = QPushButton("Start Collecting")
         self.button.clicked.connect(self.toggle_collection)
