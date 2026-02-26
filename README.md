@@ -13,15 +13,15 @@ python -m venv venv venv\Scripts\activate
 3. Install dependencies
 pip install -r requirements.txt
 
-<<<<<<< Updated upstream
 4. Run the UI
 python ui
 _main.py
-=======
 
 ### 3. Run UI
 
 python3 ui_main.py
 
 python3 firmware_csv_validator.py fake_firmware.csv
->>>>>>> Stashed changes
+
+ls /dev/cu.*
+python3 -m serial.tools.list_ports -v

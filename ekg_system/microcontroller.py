@@ -2,11 +2,12 @@ import serial
 import threading
 from serial.tools import list_ports
 
+import os
 
 class MSP430Interface:
     def __init__(self, baudrate=115200):
         self.baudrate = baudrate
-        self.port = None
+        self.port = os.getenv("EKG_PORT")  # manual override if set
         self.serial = None
         self.thread = None
         self.running = False
@@ -15,19 +16,52 @@ class MSP430Interface:
     # ---------------------------------------
     # Detect MSP430 USB CDC (Windows-safe)
     # ---------------------------------------
-    def detect_port(self):
-        for p in list_ports.comports():
-            desc = (p.description or "").lower()
+def detect_port(self):
+    TI_VID = 0x0451  # Texas Instruments vendor ID (common)
 
-            if (
-                "msp430" in desc
-                or "ti" in desc
-                or "usb serial" in desc
-            ):
-                self.port = p.device  # e.g. COM5
-                return self.port
+    candidates = []
 
+    for p in list_ports.comports():
+        desc = (p.description or "").lower()
+        manuf = (getattr(p, "manufacturer", "") or "").lower()
+        hwid = (p.hwid or "").lower()
+        vid = getattr(p, "vid", None)
+
+        score = 0
+
+        # Strong signal
+        if vid == TI_VID:
+            score += 100
+
+        if "msp" in desc or "msp" in manuf:
+            score += 80
+
+        if "texas instruments" in desc or "texas instruments" in manuf:
+            score += 60
+
+        if "ti" in desc or "ti" in manuf:
+            score += 20
+
+        # Generic USB CDC hints (cross-platform)
+        if any(k in desc for k in ("usb", "acm", "serial", "uart")):
+            score += 10
+
+        if score > 0:
+            candidates.append((score, p.device))
+
+    if not candidates:
         return None
+
+    # Prefer /dev/cu.* on macOS if present
+    candidates.sort(reverse=True)
+
+    for _, dev in candidates:
+        if dev.startswith("/dev/cu."):
+            self.port = dev
+            return dev
+
+    self.port = candidates[0][1]
+    return self.port
 
     # ---------------------------------------
     # Start serial streaming (single-open)
@@ -58,14 +92,15 @@ class MSP430Interface:
     # ---------------------------------------
     # Read loop
     # ---------------------------------------
-    def _read_loop(self):
-        while self.running and self.serial and self.serial.is_open:
-            try:
-                line = self.serial.readline().decode(errors="ignore").strip()
-                if line and self.callback:
-                    self.callback(line)
-            except Exception:
-                break
+def _read_loop(self):
+    while self.running and self.serial and self.serial.is_open:
+        try:
+            line = self.serial.readline().decode(errors="ignore").strip()
+            if line and self.callback:
+                self.callback(line)
+        except Exception:
+            self.running = False
+            break
 
     # ---------------------------------------
     # Stop streaming and close port

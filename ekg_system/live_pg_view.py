@@ -1,5 +1,6 @@
 import numpy as np
 import pyqtgraph as pg
+import queue
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel
 from PySide6.QtCore import QTimer, Qt
@@ -10,21 +11,39 @@ from ekg_system.microcontroller import MSP430Interface
 class LivePGView(QWidget):
     """
     Live View tab:
-    - Always shows Start / Stop button
+    - Start / Stop button
     - Detects MSP430 USB CDC automatically
-    - Sends START / STOP commands
-    - Displays live ECG data
+    - Displays live data:
+        CSV columns:
+          1: sample_id
+          2: timestamp
+          3: status
+          4: ch1
+          5: ch2
+      Plots:
+        Plot 1: x=timestamp, y=ch1
+        Plot 2: x=timestamp, y=ch2
     """
 
     def __init__(self, parent=None, fs=1000, window_sec=5):
         super().__init__(parent)
 
         # -------------------------
-        # Signal buffer
+        # Buffer config (N samples)
         # -------------------------
         self.fs = fs
         self.n = int(fs * window_sec)
-        self.buffer = np.zeros(self.n)
+
+        # Ring buffers (timestamp + 2 channels)
+        self.t_buf = np.full(self.n, np.nan, dtype=float)
+        self.ch1_buf = np.full(self.n, np.nan, dtype=float)
+        self.ch2_buf = np.full(self.n, np.nan, dtype=float)
+
+        self._write_idx = 0
+        self._filled = False
+
+        # Thread-safe queue: serial thread -> GUI thread
+        self._q = queue.SimpleQueue()
 
         # -------------------------
         # Hardware interface
@@ -39,17 +58,27 @@ class LivePGView(QWidget):
         # -------------------------
         layout = QVBoxLayout(self)
 
-        # Status label
         self.status = QLabel("Waiting for device…")
         self.status.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.status)
 
-        # Plot
-        self.plot = pg.PlotWidget()
-        self.plot.setBackground("w")
-        self.plot.showGrid(x=True, y=True)
-        self.curve = self.plot.plot(self.buffer, pen=pg.mkPen("k", width=1))
-        layout.addWidget(self.plot)
+        # Plot 1: ch1 vs timestamp
+        self.plot1 = pg.PlotWidget()
+        self.plot1.setBackground("w")
+        self.plot1.showGrid(x=True, y=True)
+        self.plot1.setLabel("bottom", "Timestamp (col 2)")
+        self.plot1.setLabel("left", "CH1 (col 4)")
+        self.curve1 = self.plot1.plot([], [], pen=pg.mkPen("k", width=1))
+        layout.addWidget(self.plot1)
+
+        # Plot 2: ch2 vs timestamp
+        self.plot2 = pg.PlotWidget()
+        self.plot2.setBackground("w")
+        self.plot2.showGrid(x=True, y=True)
+        self.plot2.setLabel("bottom", "Timestamp (col 2)")
+        self.plot2.setLabel("left", "CH2 (col 5)")
+        self.curve2 = self.plot2.plot([], [], pen=pg.mkPen("k", width=1))
+        layout.addWidget(self.plot2)
 
         # Start / Stop button (ALWAYS enabled)
         self.button = QPushButton("Start Collecting")
@@ -57,15 +86,12 @@ class LivePGView(QWidget):
         layout.addWidget(self.button)
 
         # -------------------------
-        # Plot update timer
+        # Timers
         # -------------------------
         self.plot_timer = QTimer(self)
         self.plot_timer.timeout.connect(self.update_plot)
         self.plot_timer.start(30)
 
-        # -------------------------
-        # Device detection timer
-        # -------------------------
         self.detect_timer = QTimer(self)
         self.detect_timer.timeout.connect(self.check_device)
         self.detect_timer.start(1000)
@@ -80,7 +106,6 @@ class LivePGView(QWidget):
                 self.device_connected = True
                 self.status.setText("MSP430 detected")
 
-                # Auto-start if user already pressed Start
                 if self.want_collecting and not self.collecting:
                     self.start_hardware()
 
@@ -122,26 +147,75 @@ class LivePGView(QWidget):
         self.status.setText("Collection stopped")
 
     # --------------------------------------------------
-    # Serial data callback
+    # Serial callback (background thread)
+    # Push parsed data into queue; do NOT touch numpy buffers here.
     # --------------------------------------------------
-    def on_serial_line(self, line):
+    def on_serial_line(self, line: str):
+        # Expect: sample_id, timestamp, status, ch1, ch2
+        parts = line.split(",")
+        if len(parts) < 5:
+            return
+
         try:
-            # Accept "value" or "timestamp,value"
-            value = float(line.split(",")[-1])
-
-            self.buffer[:-1] = self.buffer[1:]
-            self.buffer[-1] = value
+            # Keep sample_id/status available if you want later,
+            # but plotting uses timestamp/ch1/ch2.
+            timestamp = float(parts[1].strip())
+            ch1 = float(parts[3].strip())
+            ch2 = float(parts[4].strip())
         except ValueError:
-            pass
+            return
+
+        self._q.put((timestamp, ch1, ch2))
 
     # --------------------------------------------------
-    # Plot refresh
+    # GUI timer: drain queue -> write ring buffers -> plot
     # --------------------------------------------------
     def update_plot(self):
-        self.curve.setData(self.buffer)
+        # Drain as much as available (keeps up at higher rates)
+        drained = 0
+        while True:
+            try:
+                timestamp, ch1, ch2 = self._q.get_nowait()
+            except Exception:
+                break
+
+            i = self._write_idx
+            self.t_buf[i] = timestamp
+            self.ch1_buf[i] = ch1
+            self.ch2_buf[i] = ch2
+
+            self._write_idx = (i + 1) % self.n
+            if self._write_idx == 0:
+                self._filled = True
+
+            drained += 1
+
+        # Nothing new, don't redraw
+        if drained == 0:
+            return
+
+        # Build ordered view of the ring buffer
+        if self._filled:
+            idx = self._write_idx
+            t = np.concatenate((self.t_buf[idx:], self.t_buf[:idx]))
+            y1 = np.concatenate((self.ch1_buf[idx:], self.ch1_buf[:idx]))
+            y2 = np.concatenate((self.ch2_buf[idx:], self.ch2_buf[:idx]))
+        else:
+            t = self.t_buf[:self._write_idx]
+            y1 = self.ch1_buf[:self._write_idx]
+            y2 = self.ch2_buf[:self._write_idx]
+
+        # Remove NaNs (startup) to avoid odd autoscaling
+        mask = np.isfinite(t) & np.isfinite(y1) & np.isfinite(y2)
+        t = t[mask]
+        y1 = y1[mask]
+        y2 = y2[mask]
+
+        self.curve1.setData(t, y1)
+        self.curve2.setData(t, y2)
 
     # --------------------------------------------------
-    # Cleanup when leaving Live View / closing app
+    # Cleanup
     # --------------------------------------------------
     def stop(self):
         self.want_collecting = False
