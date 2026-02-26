@@ -11,58 +11,48 @@ from ekg_system.microcontroller import MSP430Interface
 class LivePGView(QWidget):
     """
     Live View tab:
-    - Start / Stop button
-    - Detects MSP430 USB CDC automatically
-    - Displays live data:
-        CSV columns:
-          1: sample_id
-          2: timestamp
-          3: status
-          4: ch1
-          5: ch2
+      CSV columns:
+        1: sample_id
+        2: timestamp
+        3: status
+        4: ch1
+        5: ch2
+
       Plots:
-        Plot 1: x=timestamp, y=ch1
-        Plot 2: x=timestamp, y=ch2
+        Plot 1: x = timestamp (col 2), y = ch1 (col 4)
+        Plot 2: x = timestamp (col 2), y = ch2 (col 5)
     """
 
     def __init__(self, parent=None, fs=1000, window_sec=5):
         super().__init__(parent)
 
-        # -------------------------
-        # Buffer config (N samples)
-        # -------------------------
         self.fs = fs
         self.n = int(fs * window_sec)
 
-        # Ring buffers (timestamp + 2 channels)
+        # Ring buffers
         self.t_buf = np.full(self.n, np.nan, dtype=float)
         self.ch1_buf = np.full(self.n, np.nan, dtype=float)
         self.ch2_buf = np.full(self.n, np.nan, dtype=float)
-
         self._write_idx = 0
         self._filled = False
 
-        # Thread-safe queue: serial thread -> GUI thread
+        # Serial -> GUI queue
         self._q = queue.SimpleQueue()
 
-        # -------------------------
         # Hardware interface
-        # -------------------------
         self.mcu = MSP430Interface()
         self.device_connected = False
         self.collecting = False
         self.want_collecting = False
 
-        # -------------------------
         # Layout
-        # -------------------------
         layout = QVBoxLayout(self)
 
         self.status = QLabel("Waiting for device…")
         self.status.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.status)
 
-        # Plot 1: ch1 vs timestamp
+        # Plot 1
         self.plot1 = pg.PlotWidget()
         self.plot1.setBackground("w")
         self.plot1.showGrid(x=True, y=True)
@@ -71,7 +61,7 @@ class LivePGView(QWidget):
         self.curve1 = self.plot1.plot([], [], pen=pg.mkPen("k", width=1))
         layout.addWidget(self.plot1)
 
-        # Plot 2: ch2 vs timestamp
+        # Plot 2
         self.plot2 = pg.PlotWidget()
         self.plot2.setBackground("w")
         self.plot2.showGrid(x=True, y=True)
@@ -80,14 +70,12 @@ class LivePGView(QWidget):
         self.curve2 = self.plot2.plot([], [], pen=pg.mkPen("k", width=1))
         layout.addWidget(self.plot2)
 
-        # Start / Stop button (ALWAYS enabled)
+        # Button
         self.button = QPushButton("Start Collecting")
         self.button.clicked.connect(self.toggle_collection)
         layout.addWidget(self.button)
 
-        # -------------------------
         # Timers
-        # -------------------------
         self.plot_timer = QTimer(self)
         self.plot_timer.timeout.connect(self.update_plot)
         self.plot_timer.start(30)
@@ -96,41 +84,31 @@ class LivePGView(QWidget):
         self.detect_timer.timeout.connect(self.check_device)
         self.detect_timer.start(1000)
 
-    # --------------------------------------------------
-    # Detect MSP430 USB CDC
-    # --------------------------------------------------
+        # If EKG_PORT is set, treat as "detected"
+        if self.mcu.port:
+            self.device_connected = True
+            self.status.setText(f"MSP430 set to {self.mcu.port}")
+
     def check_device(self):
         if not self.device_connected:
             port = self.mcu.detect_port()
             if port:
                 self.device_connected = True
-                self.status.setText("MSP430 detected")
-
+                self.status.setText(f"MSP430 detected ({port})")
                 if self.want_collecting and not self.collecting:
                     self.start_hardware()
 
-    # --------------------------------------------------
-    # Start / Stop button logic (intent-based)
-    # --------------------------------------------------
     def toggle_collection(self):
         self.want_collecting = not self.want_collecting
-
         if self.want_collecting:
             self.button.setText("Stop Collecting")
             self.status.setText("Waiting for device…")
-
             if self.device_connected:
                 self.start_hardware()
         else:
             self.button.setText("Start Collecting")
             self.stop_hardware()
 
-    # --------------------------------------------------
-    # Hardware control
-    # --------------------------------------------------
-    # --------------------------------------------------
-    # Hardware control
-    # --------------------------------------------------
     def start_hardware(self):
         if self.collecting:
             return
@@ -145,21 +123,16 @@ class LivePGView(QWidget):
     def stop_hardware(self):
         if self.collecting:
             self.mcu.stop()
-
         self.collecting = False
         self.status.setText("Collection stopped")
 
-    # --------------------------------------------------
     # Serial callback (background thread)
-    # Push parsed data into queue; do NOT touch numpy buffers here.
-    # --------------------------------------------------
     def on_serial_line(self, line: str):
-        print("UI RX:", line)
+        # print("UI RX:", line, flush=True)  # uncomment if you want spam
 
         parts = line.split(",")
         if len(parts) < 5:
             return
-
         try:
             timestamp = float(parts[1].strip())
             ch1 = float(parts[3].strip())
@@ -169,9 +142,7 @@ class LivePGView(QWidget):
 
         self._q.put((timestamp, ch1, ch2))
 
-    # --------------------------------------------------
-    # GUI timer: drain queue -> write ring buffers -> plot
-    # --------------------------------------------------
+    # GUI timer (main thread)
     def update_plot(self):
         drained = 0
         while True:
@@ -212,9 +183,6 @@ class LivePGView(QWidget):
         self.curve1.setData(t, y1)
         self.curve2.setData(t, y2)
 
-    # --------------------------------------------------
-    # Cleanup
-    # --------------------------------------------------
     def stop(self):
         self.want_collecting = False
         self.stop_hardware()
