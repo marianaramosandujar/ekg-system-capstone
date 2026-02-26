@@ -128,16 +128,16 @@ class LivePGView(QWidget):
     # --------------------------------------------------
     # Hardware control
     # --------------------------------------------------
-    def start_hardware(self):
-        if self.collecting:
-            return
-        try:
-            self.mcu.start(self.on_serial_line)
-            self.collecting = True
-            self.status.setText("Collecting data…")
-        except Exception:
-            self.status.setText("Waiting for device…")
-            self.collecting = False
+def start_hardware(self):
+    if self.collecting:
+        return
+    try:
+        self.mcu.start(self.on_serial_line)
+        self.collecting = True
+        self.status.setText("Collecting data…")
+    except Exception as e:
+        self.status.setText(f"Serial start failed: {e}")
+        self.collecting = False
 
     def stop_hardware(self):
         if self.collecting:
@@ -150,22 +150,22 @@ class LivePGView(QWidget):
     # Serial callback (background thread)
     # Push parsed data into queue; do NOT touch numpy buffers here.
     # --------------------------------------------------
-    def on_serial_line(self, line: str):
-        # Expect: sample_id, timestamp, status, ch1, ch2
-        parts = line.split(",")
-        if len(parts) < 5:
-            return
+def on_serial_line(self, line: str):
+    print("UI RX:", line)  # <-- add this line
 
-        try:
-            # Keep sample_id/status available if you want later,
-            # but plotting uses timestamp/ch1/ch2.
-            timestamp = float(parts[1].strip())
-            ch1 = float(parts[3].strip())
-            ch2 = float(parts[4].strip())
-        except ValueError:
-            return
+    # Expect: sample_id, timestamp, status, ch1, ch2
+    parts = line.split(",")
+    if len(parts) < 5:
+        return
 
-        self._q.put((timestamp, ch1, ch2))
+    try:
+        timestamp = float(parts[1].strip())
+        ch1 = float(parts[3].strip())
+        ch2 = float(parts[4].strip())
+    except ValueError:
+        return
+
+    self._q.put((timestamp, ch1, ch2))
 
     # --------------------------------------------------
     # GUI timer: drain queue -> write ring buffers -> plot
