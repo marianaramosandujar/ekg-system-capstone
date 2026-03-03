@@ -36,7 +36,7 @@ class LivePGView(QWidget):
         self._write_idx = 0
         self._filled = False
 
-        # Serial -> GUI queue
+        # Thread-safe queue (serial thread → GUI thread)
         self._q = queue.SimpleQueue()
 
         # Hardware interface
@@ -52,27 +52,25 @@ class LivePGView(QWidget):
         self.status.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.status)
 
-        # Plot 1 (CH1)
+        # -------- Plot 1 (CH1) --------
         self.plot1 = pg.PlotWidget()
         self.plot1.setBackground("w")
         self.plot1.showGrid(x=True, y=True)
-        self.plot1.setLabel("bottom", "Timestamp (col 2)")
-        self.plot1.setLabel("left", "CH1 (col 4)")
+        self.plot1.setLabel("bottom", "Timestamp")
+        self.plot1.setLabel("left", "CH1")
+        self.plot1.enableAutoRange(axis='y', enable=True)
         self.curve1 = self.plot1.plot([], [], pen=pg.mkPen("r", width=2))
         layout.addWidget(self.plot1)
 
-        # Plot 2 (CH2)
+        # -------- Plot 2 (CH2) --------
         self.plot2 = pg.PlotWidget()
         self.plot2.setBackground("w")
         self.plot2.showGrid(x=True, y=True)
-        self.plot2.setLabel("bottom", "Timestamp (col 2)")
-        self.plot2.setLabel("left", "CH2 (col 5)")
+        self.plot2.setLabel("bottom", "Timestamp")
+        self.plot2.setLabel("left", "CH2")
+        self.plot2.enableAutoRange(axis='y', enable=True)
         self.curve2 = self.plot2.plot([], [], pen=pg.mkPen("r", width=2))
         layout.addWidget(self.plot2)
-
-        # Temporary Y-range (because firmware is constant)
-        self.plot1.setYRange(-8000000, -6000000)
-        self.plot2.setYRange(4000000, 7000000)
 
         # Button
         self.button = QPushButton("Start Collecting")
@@ -88,7 +86,7 @@ class LivePGView(QWidget):
         self.detect_timer.timeout.connect(self.check_device)
         self.detect_timer.start(1000)
 
-        # If EKG_PORT env var is set, treat as detected
+        # If port manually set via EKG_PORT env variable
         if self.mcu.port:
             self.device_connected = True
             self.status.setText(f"MSP430 set to {self.mcu.port}")
@@ -147,6 +145,7 @@ class LivePGView(QWidget):
         parts = line.split(",")
         if len(parts) < 5:
             return
+
         try:
             timestamp = float(parts[1].strip())
             ch1 = float(parts[3].strip())
