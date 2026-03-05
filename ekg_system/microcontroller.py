@@ -28,8 +28,8 @@ class MSP430Interface:
 
     def __init__(self, baudrate=115200, mode="binary"):
         self.baudrate = baudrate
-        self.mode = mode  # currently only "binary" implemented here
-        self.port = os.getenv("EKG_PORT")  # manual override if set
+        self.mode = mode  # "binary"
+        self.port = os.getenv("EKG_PORT")  # optional override
 
         self.serial = None
         self.thread = None
@@ -39,10 +39,8 @@ class MSP430Interface:
         # internal buffer for packet framing
         self._buf = bytearray()
 
-    # ---------------------------------------
-    # Detect MSP430 USB CDC
-    # ---------------------------------------
     def detect_port(self):
+        """Try to find the MSP430 CDC device."""
         for p in list_ports.comports():
             desc = (p.description or "").lower()
             if "usb serial" in desc or "msp" in desc or "ti" in desc:
@@ -50,15 +48,13 @@ class MSP430Interface:
                 return self.port
         return None
 
-    # ---------------------------------------
-    # Start serial streaming (single-open)
-    # ---------------------------------------
     def start(self, callback):
+        """Open port and start background reader thread."""
         if self.serial and self.serial.is_open:
             return
 
         if not self.port:
-            raise RuntimeError("No MSP430 port detected")
+            raise RuntimeError("No MSP430 port detected (and EKG_PORT not set)")
 
         self.serial = serial.Serial(self.port, self.baudrate, timeout=1)
         try:
@@ -74,6 +70,7 @@ class MSP430Interface:
 
     @staticmethod
     def _s24_from_be3(b0, b1, b2) -> int:
+        """Convert signed 24-bit big-endian (3 bytes) to Python int."""
         v = (b0 << 16) | (b1 << 8) | b2
         if v & 0x800000:
             v -= 1 << 24
@@ -89,7 +86,6 @@ class MSP430Interface:
                 if chunk:
                     self._buf.extend(chunk)
 
-                # parse as many whole packets as possible
                 while True:
                     if len(self._buf) < self.PACKET_LEN:
                         break
@@ -106,8 +102,8 @@ class MSP430Interface:
                     if len(self._buf) < self.PACKET_LEN:
                         break
 
-                    pkt = self._buf[:self.PACKET_LEN]
-                    del self._buf[:self.PACKET_LEN]
+                    pkt = self._buf[: self.PACKET_LEN]
+                    del self._buf[: self.PACKET_LEN]
 
                     sid = (
                         pkt[2]
@@ -119,13 +115,14 @@ class MSP430Interface:
                     ch2 = self._s24_from_be3(pkt[9], pkt[10], pkt[11])
 
                     if self.callback:
-                        self.callback(sid, ch1, ch2, time.time())
+                        self.callback(int(sid), int(ch1), int(ch2), time.time())
 
             except Exception:
                 self.running = False
                 break
 
     def stop(self):
+        """Stop reader thread and close serial port."""
         self.running = False
         if self.serial:
             try:
