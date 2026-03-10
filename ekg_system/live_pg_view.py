@@ -25,6 +25,11 @@ class LivePGView(QWidget):
 
       CSV logging:
         Writes rows: sample_id, ch1, ch2
+
+      Startup behavior:
+        - raw data is still saved to CSV immediately
+        - first few seconds are ignored for plotting so startup transients
+          do not distort the graph
     """
 
     def __init__(self, parent=None, fs=1000, window_sec=5):
@@ -33,6 +38,11 @@ class LivePGView(QWidget):
         self.fs = fs
         self.window_sec = window_sec
         self.n = int(fs * window_sec)
+
+        # Ignore first few seconds on the graph only
+        self.startup_discard_sec = 5
+        self.startup_discard_samples = int(self.fs * self.startup_discard_sec)
+        self.samples_seen = 0
 
         # Ring buffers (x-axis is sample_id)
         self.sid_buf = np.full(self.n, np.nan, dtype=float)
@@ -180,7 +190,9 @@ class LivePGView(QWidget):
             self.mcu.start(self.on_sample)
 
             self.collecting = True
-            self.status.setText(f"Collecting… saving to {os.path.basename(self.csv_path)}")
+            self.status.setText(
+                f"Collecting… saving to {os.path.basename(self.csv_path)}"
+            )
 
         except Exception as e:
             self.status.setText(f"Serial start failed: {e}")
@@ -206,6 +218,11 @@ class LivePGView(QWidget):
         self.ch2_buf[:] = np.nan
         self._write_idx = 0
         self._filled = False
+        self.samples_seen = 0
+
+        # Re-enable auto-range each new run
+        self.plot1.enableAutoRange(axis="y", enable=True)
+        self.plot2.enableAutoRange(axis="y", enable=True)
 
         # Clear queue quickly
         try:
@@ -233,6 +250,17 @@ class LivePGView(QWidget):
             except Exception:
                 break
 
+            # Always save raw data to CSV
+            if self._csv_w is not None:
+                self._csv_w.writerow([sid, ch1, ch2])
+
+            self.samples_seen += 1
+
+            # Ignore startup transient for plotting only
+            if self.samples_seen <= self.startup_discard_samples:
+                drained += 1
+                continue
+
             i = self._write_idx
             self.sid_buf[i] = sid
             self.ch1_buf[i] = ch1
@@ -241,10 +269,6 @@ class LivePGView(QWidget):
             self._write_idx = (i + 1) % self.n
             if self._write_idx == 0:
                 self._filled = True
-
-            # Write CSV on GUI thread
-            if self._csv_w is not None:
-                self._csv_w.writerow([sid, ch1, ch2])
 
             drained += 1
 
@@ -257,6 +281,15 @@ class LivePGView(QWidget):
                 self._csv_f.flush()
             except Exception:
                 pass
+
+        # During startup discard, do not plot yet
+        if self.samples_seen <= self.startup_discard_samples:
+            remaining = self.startup_discard_samples - self.samples_seen
+            sec_left = max(0.0, remaining / self.fs)
+            self.status.setText(
+                f"Collecting… settling signal ({sec_left:.1f}s left) | saving to {os.path.basename(self.csv_path)}"
+            )
+            return
 
         if self._filled:
             idx = self._write_idx
@@ -273,10 +306,15 @@ class LivePGView(QWidget):
         y1 = y1[mask]
         y2 = y2[mask]
 
+        if len(x) == 0:
+            return
+
         self.curve1.setData(x, y1)
         self.curve2.setData(x, y2)
 
-        # No follow, no setXRange, no snapping.
+        self.status.setText(
+            f"Collecting… saving to {os.path.basename(self.csv_path)}"
+        )
 
     # --------------------------------------------------
     # Cleanup
