@@ -108,8 +108,13 @@ class EKGApp(QWidget):
     def reset_zoom(self):
         if self.clinical_view and self.clinical_view.isVisible():
             self.clinical_view.reset_view()
+
+        elif self.live_view.isVisible():
+            self.live_view.reset_view()
+
         else:
-            self.plot_widget.enableAutoRange()
+            self.plot_widget.enableAutoRange(x=True, y=True)
+            self.plot_widget.autoRange()
 
     # -----------------------------------------
     # File loading
