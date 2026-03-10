@@ -6,8 +6,10 @@ import pyqtgraph as pg
 import queue
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QHBoxLayout
-from PySide6.QtCore import QTimer, Qt, QUrl
+from PySide6.QtCore import QTimer, Qt, QUrl, QSize
 from PySide6.QtGui import QDesktopServices
+
+import qtawesome as qta
 
 from ekg_system.microcontroller import MSP430Interface
 
@@ -23,7 +25,6 @@ class LivePGView(QWidget):
 
         self.samples_seen = 0
 
-        # FULL history (saved + stored)
         self.sid_data = []
         self.ch1_data = []
         self.ch2_data = []
@@ -66,11 +67,16 @@ class LivePGView(QWidget):
         controls = QHBoxLayout()
 
         self.button = QPushButton("Start Collecting")
+        self.button.setIcon(qta.icon("fa.play"))
+        self.button.setIconSize(QSize(18, 18))
+        self.button.setFixedHeight(38)
         self.button.clicked.connect(self.toggle_collection)
         controls.addWidget(self.button)
 
         self.open_btn = QPushButton("Open Data File")
-        self.open_btn.setFixedSize(140, 36)
+        self.open_btn.setIcon(qta.icon("fa.folder-open"))
+        self.open_btn.setIconSize(QSize(18, 18))
+        self.open_btn.setFixedSize(170, 38)
         self.open_btn.setEnabled(False)
         self.open_btn.clicked.connect(self.open_csv_file)
         controls.addWidget(self.open_btn)
@@ -86,8 +92,6 @@ class LivePGView(QWidget):
         self.detect_timer.timeout.connect(self.check_device)
         self.detect_timer.start(1000)
 
-    # --------------------------------------------------
-
     def check_device(self):
 
         if not self.device_connected:
@@ -101,28 +105,29 @@ class LivePGView(QWidget):
                 if self.want_collecting:
                     self.start_hardware()
 
-    # --------------------------------------------------
+    def _update_collect_button(self):
+
+        if self.want_collecting:
+            self.button.setText("Stop Collecting")
+            self.button.setIcon(qta.icon("fa.pause"))
+        else:
+            self.button.setText("Start Collecting")
+            self.button.setIcon(qta.icon("fa.play"))
 
     def toggle_collection(self):
 
         self.want_collecting = not self.want_collecting
+        self._update_collect_button()
 
         if self.want_collecting:
 
-            self.button.setText("Stop Collecting")
-
             if self.device_connected:
                 self.start_hardware()
-
             else:
                 self.status.setText("Waiting for device…")
 
         else:
-
-            self.button.setText("Start Collecting")
             self.stop_hardware()
-
-    # --------------------------------------------------
 
     def _start_csv(self):
 
@@ -148,8 +153,6 @@ class LivePGView(QWidget):
         if self.csv_path:
             QDesktopServices.openUrl(QUrl.fromLocalFile(self.csv_path))
 
-    # --------------------------------------------------
-
     def start_hardware(self):
 
         if self.collecting:
@@ -170,8 +173,6 @@ class LivePGView(QWidget):
         self.collecting = False
         self._stop_csv()
 
-    # --------------------------------------------------
-
     def _reset_buffers(self):
 
         self.sid_data = []
@@ -186,13 +187,9 @@ class LivePGView(QWidget):
         while not self._q.empty():
             self._q.get()
 
-    # --------------------------------------------------
-
     def on_sample(self, sid, ch1, ch2, t_wall):
 
         self._q.put((sid, ch1, ch2))
-
-    # --------------------------------------------------
 
     def update_plot(self):
 
@@ -224,9 +221,7 @@ class LivePGView(QWidget):
         y1 = np.asarray(self.ch1_data)
         y2 = np.asarray(self.ch2_data)
 
-        # display only last N seconds
         if len(x) > self.display_samples:
-
             x = x[-self.display_samples:]
             y1 = y1[-self.display_samples:]
             y2 = y2[-self.display_samples:]
@@ -234,16 +229,7 @@ class LivePGView(QWidget):
         self.curve1.setData(x, y1)
         self.curve2.setData(x, y2)
 
-        self.status.setText(
-            f"Collecting… samples: {self.samples_seen} | saving to {os.path.basename(self.csv_path)}"
-        )
-
-    # --------------------------------------------------
-
-    def stop(self):
-
-        self.want_collecting = False
-        self.stop_hardware()
-
-        self.button.setText("Start Collecting")
-        self.status.setText("Collection stopped")
+        if self.csv_path:
+            self.status.setText(
+                f"Collecting… samples: {self.samples_seen} | saving to {os.path.basename(self.csv_path)}"
+            )
