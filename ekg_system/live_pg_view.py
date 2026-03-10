@@ -46,7 +46,7 @@ class LivePGView(QWidget):
         self.status.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.status)
 
-        # -------- CH1 --------
+        # CH1
         self.plot1 = pg.PlotWidget()
         self.plot1.setBackground("w")
         self.plot1.showGrid(x=True, y=True)
@@ -55,7 +55,7 @@ class LivePGView(QWidget):
         self.curve1 = self.plot1.plot([], [], pen=pg.mkPen("black", width=2))
         layout.addWidget(self.plot1)
 
-        # -------- CH2 --------
+        # CH2
         self.plot2 = pg.PlotWidget()
         self.plot2.setBackground("w")
         self.plot2.showGrid(x=True, y=True)
@@ -67,23 +67,22 @@ class LivePGView(QWidget):
         controls = QHBoxLayout()
 
         self.button = QPushButton("Start Collecting")
-        self.button.setIcon(qta.icon("fa.play"))
-        self.button.setIconSize(QSize(18, 18))
+        self.button.setIcon(qta.icon("fa5s.play"))
+        self.button.setIconSize(QSize(18,18))
         self.button.setFixedHeight(38)
         self.button.clicked.connect(self.toggle_collection)
         controls.addWidget(self.button)
 
         self.open_btn = QPushButton("Open Data File")
-        self.open_btn.setIcon(qta.icon("fa.folder-open"))
-        self.open_btn.setIconSize(QSize(18, 18))
-        self.open_btn.setFixedSize(170, 38)
+        self.open_btn.setIcon(qta.icon("fa5s.folder-open"))
+        self.open_btn.setIconSize(QSize(18,18))
+        self.open_btn.setFixedSize(170,38)
         self.open_btn.setEnabled(False)
         self.open_btn.clicked.connect(self.open_csv_file)
         controls.addWidget(self.open_btn)
 
         layout.addLayout(controls)
 
-        # timers
         self.plot_timer = QTimer(self)
         self.plot_timer.timeout.connect(self.update_plot)
         self.plot_timer.start(50)
@@ -109,10 +108,10 @@ class LivePGView(QWidget):
 
         if self.want_collecting:
             self.button.setText("Stop Collecting")
-            self.button.setIcon(qta.icon("fa.pause"))
+            self.button.setIcon(qta.icon("fa5s.pause"))
         else:
             self.button.setText("Start Collecting")
-            self.button.setIcon(qta.icon("fa.play"))
+            self.button.setIcon(qta.icon("fa5s.play"))
 
     def toggle_collection(self):
 

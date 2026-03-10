@@ -46,22 +46,22 @@ class ClinicalPGView(QWidget):
         layout.addLayout(nav_layout)
 
         btn_defs = [
-            ("fa.backward", "Start", self.go_to_start),
-            ("fa.arrow-left", "Left", self.pan_left),
-            ("fa.search-minus", "Zoom Out", self.zoom_out),
-            ("fa.refresh", "Reset", self.reset_view),
-            ("fa.search-plus", "Zoom In", self.zoom_in),
-            ("fa.arrow-right", "Right", self.pan_right),
-            ("fa.forward", "End", self.go_to_end),
+            ("fa5s.backward", "Start", self.go_to_start),
+            ("fa5s.arrow-left", "Left", self.pan_left),
+            ("fa5s.search-minus", "Zoom Out", self.zoom_out),
+            ("fa5s.sync", "Reset", self.reset_view),
+            ("fa5s.search-plus", "Zoom In", self.zoom_in),
+            ("fa5s.arrow-right", "Right", self.pan_right),
+            ("fa5s.forward", "End", self.go_to_end),
         ]
 
         for icon_name, tooltip, handler in btn_defs:
 
             btn = QPushButton()
             btn.setIcon(qta.icon(icon_name))
-            btn.setIconSize(QSize(20, 20))
+            btn.setIconSize(QSize(20,20))
             btn.setToolTip(tooltip)
-            btn.setFixedSize(42, 40)
+            btn.setFixedSize(42,40)
             btn.clicked.connect(handler)
 
             nav_layout.addWidget(btn)
@@ -99,25 +99,22 @@ class ClinicalPGView(QWidget):
     def zoom_in(self):
 
         xmin, xmax = self.plot.viewRange()[0]
-
         mid = (xmin + xmax) / 2
         span = (xmax - xmin) * 0.8
 
-        self._fix_bounds(mid - span / 2, mid + span / 2)
+        self._fix_bounds(mid - span/2, mid + span/2)
 
     def zoom_out(self):
 
         xmin, xmax = self.plot.viewRange()[0]
-
         mid = (xmin + xmax) / 2
         span = (xmax - xmin) * 1.25
 
-        self._fix_bounds(mid - span / 2, mid + span / 2)
+        self._fix_bounds(mid - span/2, mid + span/2)
 
     def pan_left(self):
 
         xmin, xmax = self.plot.viewRange()[0]
-
         shift = (xmax - xmin) * 0.2
 
         self._fix_bounds(xmin - shift, xmax - shift)
@@ -125,20 +122,16 @@ class ClinicalPGView(QWidget):
     def pan_right(self):
 
         xmin, xmax = self.plot.viewRange()[0]
-
         shift = (xmax - xmin) * 0.2
 
         self._fix_bounds(xmin + shift, xmax + shift)
 
     def go_to_start(self):
-
         self._fix_bounds(0, self.window_sec)
 
     def go_to_end(self):
-
         self._fix_bounds(max(0, self.duration - self.window_sec), self.duration)
 
     def _check_double_click(self, event):
-
         if event.double():
             self.reset_view()
