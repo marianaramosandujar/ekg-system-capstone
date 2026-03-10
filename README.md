@@ -1,10 +1,12 @@
 EKG System Setup Instructions (Windows)
 These instructions are for setting up and running the EKG system on Windows.
+
 1. Clone the repository
 Make sure Git and Python are installed.
-git clone https://github.com/marianaramosandujar/ekg-
-system-capstone.git 
+git clone https://github.com/marianaramosandujar/ekg-system-capstone.git 
+
 cd ekg-system-capstone 
+
 git checkout working-dec
 
 2. Create and activate virtual environment
@@ -14,14 +16,8 @@ python -m venv venv venv\Scripts\activate
 pip install -r requirements.txt
 
 4. Run the UI
-python ui
-_main.py
+python ui_main.py
 
 ### 3. Run UI
 
-python3 ui_main.py
-
-python3 firmware_csv_validator.py fake_firmware.csv
-
-ls /dev/cu.*
-python3 -m serial.tools.list_ports -v
+python ui_main.py
