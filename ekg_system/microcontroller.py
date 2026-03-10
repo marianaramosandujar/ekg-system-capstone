@@ -40,18 +40,81 @@ class MSP430Interface:
         self._buf = bytearray()
 
     def detect_port(self):
-        """Try to find the MSP430 CDC device."""
-        for p in list_ports.comports():
+        """
+        Try to find the MSP430 CDC device by opening candidate ports and
+        checking which one is actually streaming valid packet sync bytes.
+        """
+        # If user manually set EKG_PORT, honor that first
+        if self.port:
+            return self.port
+
+        ports = list(list_ports.comports())
+
+        # First pass: prefer likely USB serial / TI / MSP430 devices
+        preferred = []
+        others = []
+
+        for p in ports:
             desc = (p.description or "").lower()
-            if "usb serial" in desc or "msp" in desc or "ti" in desc:
-                self.port = p.device
-                return self.port
+            hwid = (p.hwid or "").lower()
+
+            if (
+                "usb serial" in desc
+                or "msp" in desc
+                or "ti" in desc
+                or "texas instruments" in desc
+                or "1cbe" in hwid
+                or "2047" in hwid
+            ):
+                preferred.append(p)
+            else:
+                others.append(p)
+
+        candidates = preferred + others
+
+        for p in candidates:
+            ser = None
+            try:
+                ser = serial.Serial(p.device, self.baudrate, timeout=0.25)
+
+                try:
+                    ser.reset_input_buffer()
+                except Exception:
+                    pass
+
+                # Give device a brief moment to stream
+                start = time.time()
+                data = bytearray()
+
+                while time.time() - start < 1.5:
+                    chunk = ser.read(256)
+                    if chunk:
+                        data.extend(chunk)
+
+                        idx = data.find(self.SYNC)
+                        if idx >= 0 and len(data) - idx >= self.PACKET_LEN:
+                            self.port = p.device
+                            return self.port
+
+                # No valid packet seen on this port
+            except Exception:
+                pass
+            finally:
+                if ser is not None:
+                    try:
+                        ser.close()
+                    except Exception:
+                        pass
+
         return None
 
     def start(self, callback):
         """Open port and start background reader thread."""
         if self.serial and self.serial.is_open:
             return
+
+        if not self.port:
+            self.port = self.detect_port()
 
         if not self.port:
             raise RuntimeError("No MSP430 port detected (and EKG_PORT not set)")
@@ -64,6 +127,7 @@ class MSP430Interface:
 
         self.callback = callback
         self.running = True
+        self._buf = bytearray()
 
         self.thread = threading.Thread(target=self._read_loop, daemon=True)
         self.thread.start()
