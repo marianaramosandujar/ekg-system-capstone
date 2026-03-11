@@ -75,7 +75,6 @@ class EKGApp(QWidget):
 
         main_layout.addLayout(row)
 
-
         self.label = QLabel("Select Live View to begin live acquisition.")
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setStyleSheet("font-size: 16px; padding: 8px;")
@@ -87,7 +86,6 @@ class EKGApp(QWidget):
         style_ecg_plot(self.plot_widget)
         main_layout.addWidget(self.plot_widget)
 
-
         self.live_view = LivePGView(
             parent=self,
             fs=1000,
@@ -97,6 +95,9 @@ class EKGApp(QWidget):
         main_layout.addWidget(self.live_view)
 
         self.clinical_view = None
+
+        # START APP IN LIVE VIEW
+        self.show_live_view()
 
 
     def reset_zoom(self):
@@ -137,6 +138,7 @@ class EKGApp(QWidget):
 
         except Exception as e:
             self.label.setText(f"Error: {e}")
+
 
     def show_standard_view(self):
         if self.clinical_view:
@@ -207,10 +209,12 @@ class EKGApp(QWidget):
                 symbolBrush="r",
                 symbolSize=8
             )
+
             style_ecg_plot(self.plot_widget)
 
         except Exception as e:
             self.label.setText(f"Error analyzing: {e}")
+
 
     # -----------------------------------------
     # Clinical View
@@ -234,6 +238,7 @@ class EKGApp(QWidget):
 
         self.clinical_view.show()
 
+
     # -----------------------------------------
     # Live View
     # -----------------------------------------
@@ -245,6 +250,7 @@ class EKGApp(QWidget):
         self.label.hide()
 
         self.live_view.show()
+
 
     def closeEvent(self, event):
         self.live_view.stop()
