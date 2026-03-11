@@ -81,6 +81,7 @@ class LivePGView(QWidget):
         self.button.setIcon(qta.icon("fa5s.play"))
         self.button.setIconSize(QSize(18, 18))
         self.button.setFixedHeight(38)
+        self.button.setEnabled(False)
         self.button.clicked.connect(self.toggle_collection)
         controls.addWidget(self.button)
 
@@ -114,6 +115,7 @@ class LivePGView(QWidget):
 
             if port:
                 self.device_connected = True
+                self.button.setEnabled(True)
                 self.status.setText(f"MSP430 detected ({port})")
 
                 if self.want_collecting:
