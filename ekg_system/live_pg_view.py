@@ -143,7 +143,13 @@ class LivePGView(QWidget):
 
     def _start_csv(self):
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.csv_path = os.path.abspath(f"ekg_capture_{ts}.csv")
+
+        # create folder if it doesn't exist
+        folder = os.path.join(os.getcwd(), "Live Data")
+        os.makedirs(folder, exist_ok=True)
+
+        # full csv path inside folder
+        self.csv_path = os.path.join(folder, f"ekg_capture_{ts}.csv")
 
         self._csv_f = open(self.csv_path, "w", newline="")
         self._csv_w = csv.writer(self._csv_f)
