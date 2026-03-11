@@ -12,6 +12,19 @@ from ekg_system.clinical_pg_view import ClinicalPGView
 from ekg_system.live_pg_view import LivePGView
 
 
+def style_ecg_plot(plot_widget):
+    plot_widget.setBackground("w")
+
+    axis_pen = pg.mkPen(color="black", width=2)
+    plot_widget.getAxis("bottom").setPen(axis_pen)
+    plot_widget.getAxis("left").setPen(axis_pen)
+
+    plot_widget.getAxis("bottom").setTextPen("black")
+    plot_widget.getAxis("left").setTextPen("black")
+
+    plot_widget.showGrid(x=True, y=True, alpha=0.12)
+
+
 class EKGApp(QWidget):
     # main UI app
     def __init__(self):
@@ -19,9 +32,6 @@ class EKGApp(QWidget):
         self.setWindowTitle("EKG Analysis System")
         self.setGeometry(100, 100, 1200, 800)
 
-        # -----------------------------------------
-        # Processing objects (file-based only)
-        # -----------------------------------------
         self.processor = EKGProcessor(sampling_rate=1000)
         self.detector = ArrhythmiaDetector(sampling_rate=1000)
         self.data = None
@@ -29,9 +39,6 @@ class EKGApp(QWidget):
 
         main_layout = QVBoxLayout(self)
 
-        # -----------------------------------------
-        # Top control buttons
-        # -----------------------------------------
         row = QHBoxLayout()
 
         self.live_btn = QPushButton("Live View")
@@ -68,27 +75,19 @@ class EKGApp(QWidget):
 
         main_layout.addLayout(row)
 
-        # -----------------------------------------
-        # Status label
-        # -----------------------------------------
+
         self.label = QLabel("Select Live View to begin live acquisition.")
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setStyleSheet("font-size: 16px; padding: 8px;")
         main_layout.addWidget(self.label)
 
-        # -----------------------------------------
-        # Standard plot (file-based)
-        # -----------------------------------------
         self.plot_widget = pg.PlotWidget()
-        self.plot_widget.setBackground("w")
-        self.plot_widget.showGrid(x=True, y=True)
         self.plot_widget.setLabel("bottom", "Time (s)")
         self.plot_widget.setLabel("left", "Amplitude (mV)")
+        style_ecg_plot(self.plot_widget)
         main_layout.addWidget(self.plot_widget)
 
-        # -----------------------------------------
-        # Live View (created ONCE)
-        # -----------------------------------------
+
         self.live_view = LivePGView(
             parent=self,
             fs=1000,
@@ -97,14 +96,9 @@ class EKGApp(QWidget):
         self.live_view.hide()
         main_layout.addWidget(self.live_view)
 
-        # -----------------------------------------
-        # Other pages
-        # -----------------------------------------
         self.clinical_view = None
 
-    # -----------------------------------------
-    # Utility
-    # -----------------------------------------
+
     def reset_zoom(self):
         if self.clinical_view and self.clinical_view.isVisible():
             self.clinical_view.reset_view()
@@ -116,9 +110,7 @@ class EKGApp(QWidget):
             self.plot_widget.enableAutoRange(x=True, y=True)
             self.plot_widget.autoRange()
 
-    # -----------------------------------------
-    # File loading
-    # -----------------------------------------
+
     def load_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Select EKG File", "", "CSV/TXT/NPY (*.csv *.txt *.npy)"
@@ -146,9 +138,6 @@ class EKGApp(QWidget):
         except Exception as e:
             self.label.setText(f"Error: {e}")
 
-    # -----------------------------------------
-    # Standard plot view
-    # -----------------------------------------
     def show_standard_view(self):
         if self.clinical_view:
             self.clinical_view.hide()
@@ -167,12 +156,11 @@ class EKGApp(QWidget):
         self.plot_widget.plot(
             t,
             self.data,
-            pen=pg.mkPen(color="black", width=1)
+            pen=pg.mkPen(color="black", width=2)
         )
+        style_ecg_plot(self.plot_widget)
 
-    # -----------------------------------------
-    # Analysis
-    # -----------------------------------------
+
     def analyze_signal(self):
         if self.data is None:
             return
@@ -208,7 +196,7 @@ class EKGApp(QWidget):
             self.plot_widget.plot(
                 t,
                 self.processor.filtered_data,
-                pen=pg.mkPen(color="black", width=1)
+                pen=pg.mkPen(color="black", width=2)
             )
 
             self.plot_widget.plot(
@@ -219,6 +207,7 @@ class EKGApp(QWidget):
                 symbolBrush="r",
                 symbolSize=8
             )
+            style_ecg_plot(self.plot_widget)
 
         except Exception as e:
             self.label.setText(f"Error analyzing: {e}")
@@ -257,9 +246,6 @@ class EKGApp(QWidget):
 
         self.live_view.show()
 
-    # -----------------------------------------
-    # Clean shutdown
-    # -----------------------------------------
     def closeEvent(self, event):
         self.live_view.stop()
         event.accept()
