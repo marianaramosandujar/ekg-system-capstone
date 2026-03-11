@@ -59,6 +59,11 @@ class ClinicalPGView(QWidget):
         nav_layout = QHBoxLayout()
         layout.addLayout(nav_layout)
 
+        nav_layout = QHBoxLayout()
+        layout.addLayout(nav_layout)
+
+        nav_layout.addStretch()  # keeps buttons grouped
+
         btn_defs = [
             ("fa5s.backward", "Start", self.go_to_start),
             ("fa5s.arrow-left", "Left", self.pan_left),
@@ -77,6 +82,8 @@ class ClinicalPGView(QWidget):
             btn.setFixedSize(42, 40)
             btn.clicked.connect(handler)
             nav_layout.addWidget(btn)
+
+        nav_layout.addStretch()
 
         self.plot.scene().sigMouseClicked.connect(self._check_double_click)
 
