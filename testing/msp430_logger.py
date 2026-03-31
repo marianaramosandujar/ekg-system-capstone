@@ -9,11 +9,18 @@ OUTFILE = "ekg_capture.csv"
 SYNC = b"\xA5\x5A"
 PACKET_LEN = 12  # 2 sync + 10 bytes payload
 
+VREF = 2.42
+GAIN = 6          # set to 6 or 12 to match ADS config
+FS = (2**23 - 1)
+
 def s24_from_be3(b0, b1, b2):
     v = (b0 << 16) | (b1 << 8) | b2
     if v & 0x800000:
         v -= 1 << 24
     return v
+
+def code_to_mv(code, vref=VREF, gain=GAIN):
+    return (1000.0 * code * vref) / (gain * FS)
 
 print(f"Opening {PORT}...")
 print(f"Saving to {OUTFILE}")
@@ -24,7 +31,7 @@ ser.reset_input_buffer()
 
 with open(OUTFILE, "w", newline="") as f:
     w = csv.writer(f)
-    w.writerow(["sample_id", "ch1", "ch2"])
+    w.writerow(["sample_id", "ch1_code", "ch2_code", "ch1_mv", "ch2_mv"])
 
     buf = bytearray()
     good = 0
@@ -36,7 +43,6 @@ with open(OUTFILE, "w", newline="") as f:
     last_sid = None
     expected_sid = None
 
-    # For true Hz measurement
     last_rate_time = time.time()
     last_rate_sid = None
 
@@ -52,7 +58,6 @@ with open(OUTFILE, "w", newline="") as f:
 
                 idx = buf.find(SYNC)
                 if idx < 0:
-                    # keep last 1 byte in case it's 0xA5
                     buf[:] = buf[-1:]
                     break
 
@@ -73,7 +78,6 @@ with open(OUTFILE, "w", newline="") as f:
                     last_rate_sid = sid
                     last_rate_time = time.time()
 
-                # drop detection
                 if expected_sid is not None and sid != expected_sid:
                     if sid > expected_sid:
                         drops += (sid - expected_sid)
@@ -82,10 +86,13 @@ with open(OUTFILE, "w", newline="") as f:
                 expected_sid += 1
                 last_sid = sid
 
-                ch1 = s24_from_be3(pkt[6], pkt[7], pkt[8])
-                ch2 = s24_from_be3(pkt[9], pkt[10], pkt[11])
+                ch1_code = s24_from_be3(pkt[6], pkt[7], pkt[8])
+                ch2_code = s24_from_be3(pkt[9], pkt[10], pkt[11])
 
-                w.writerow([sid, ch1, ch2])
+                ch1_mv = code_to_mv(ch1_code)
+                ch2_mv = code_to_mv(ch2_code)
+
+                w.writerow([sid, ch1_code, ch2_code, ch1_mv, ch2_mv])
                 good += 1
 
                 if good % 1000 == 0:
@@ -93,7 +100,6 @@ with open(OUTFILE, "w", newline="") as f:
                     elapsed = now - start
                     wall_rate = good / elapsed if elapsed > 0 else 0
 
-                    # True sample frequency from sid vs wall time over last 1000 samples
                     dt = now - last_rate_time
                     ds = sid - last_rate_sid if last_rate_sid is not None else 0
                     true_hz = (ds / dt) if dt > 0 else 0.0
@@ -102,7 +108,8 @@ with open(OUTFILE, "w", newline="") as f:
                     last_rate_sid = sid
 
                     print(
-                        f"Captured {good}"f" true_hz: {true_hz:.1f} samp/s | drops: {drops}"
+                        f"Captured {good} true_hz: {true_hz:.1f} samp/s | "
+                        f"ch1={ch1_mv:.4f} mV | ch2={ch2_mv:.4f} mV | drops: {drops}"
                     )
 
     except KeyboardInterrupt:
