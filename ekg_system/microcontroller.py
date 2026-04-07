@@ -26,6 +26,10 @@ class MSP430Interface:
     SYNC = b"\xA5\x5A"
     PACKET_LEN = 12
 
+    VREF = 2.42
+    GAIN = 6
+    FS = (2**23 - 1)
+
     def __init__(self, baudrate=115200, mode="binary"):
         self.baudrate = baudrate
         self.mode = mode  # "binary"
@@ -140,6 +144,11 @@ class MSP430Interface:
             v -= 1 << 24
         return v
 
+    @classmethod
+    def code_to_mv(cls, code: int) -> float:
+        """Convert ADS1292R ADC code to millivolts."""
+        return (1000.0 * code * cls.VREF) / (cls.GAIN * cls.FS)
+
     def _read_loop(self):
         if self.mode != "binary":
             raise RuntimeError(f"Unsupported mode: {self.mode}")
@@ -177,6 +186,10 @@ class MSP430Interface:
                     )
                     ch1 = self._s24_from_be3(pkt[6], pkt[7], pkt[8])
                     ch2 = self._s24_from_be3(pkt[9], pkt[10], pkt[11])
+
+                    # Optional mV conversions available for UI or debugging if needed
+                    ch1_mv = self.code_to_mv(ch1)
+                    ch2_mv = self.code_to_mv(ch2)
 
                     if self.callback:
                         self.callback(int(sid), int(ch1), int(ch2), time.time())
