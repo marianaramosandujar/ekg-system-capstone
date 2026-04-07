@@ -16,13 +16,17 @@ git clone https://github.com/marianaramosandujar/ekg-system-capstone.git
 5. git checkout testing-branch
 
 6. Create and activate virtual environment
-python -m venv venv venv\Scripts\activate or python3 -m venv venv venv\Scripts\activate depends on your device. 
+python -m venv venv venv\Scripts\activate
 
-7. Install dependencies
+or python3 -m venv venv venv\Scripts\activate 
+
+depends on your device. 
+
+8. Install dependencies
 pip install -r requirements.txt
 or pip3 install -r requirements.txt
 
-8. Run the UI
+9. Run the UI
 python ui_main.py
 
 
