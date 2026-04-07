@@ -13,25 +13,25 @@ Make sure your device has Python and Git already installed, if not, follow these
  
   **cd ekg-system-capstone**
 
-3. In your terminal, type this
 
-  **git checkout testing-branch**
-
-4. Create and activate virtual environment, in your terminal type this.
+3. Create and activate virtual environment, in your terminal type this.
 
    
-If windows or Linux, type this **python -m venv venv venv\Scripts\activate**
+If windows or Linux, type this
 
-If Mac, type this **python3 -m venv venv venv\Scripts\activate** 
+**python -m venv venv venv\Scripts\activate**
+
+If Mac, type this
+**python3 -m venv venv venv\Scripts\activate** 
 
 
-5. Install dependencies by typing this into your terminal.
+4. Install dependencies by typing this into your terminal.
 
 Windows - **pip install -r requirements.txt** 
 
 Mac- **pip3 install -r requirements.txt**
 
-6. Run the UI
+5. Run the UI
 For Windows - **python ui_main.py**
 
 For Mac - **python3 ui_main.py**
