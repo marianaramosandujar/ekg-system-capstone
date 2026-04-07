@@ -7,7 +7,7 @@ git clone https://github.com/marianaramosandujar/ekg-system-capstone.git
 
 cd ekg-system-capstone 
 
-git checkout working-dec
+git checkout testing-branch
 
 2. Create and activate virtual environment
 python -m venv venv venv\Scripts\activate
