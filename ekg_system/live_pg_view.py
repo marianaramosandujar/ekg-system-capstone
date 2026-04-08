@@ -62,7 +62,7 @@ class LivePGView(QWidget):
         # CH1 plot
         self.plot1 = pg.PlotWidget()
         self.plot1.setLabel("bottom", "Sample ID")
-        self.plot1.setLabel("left", "CH1")
+        self.plot1.setLabel("left", "CH1 (mV)")
         style_ecg_plot(self.plot1)
         self.curve1 = self.plot1.plot([], [], pen=pg.mkPen(color="black", width=2))
         layout.addWidget(self.plot1)
@@ -70,7 +70,7 @@ class LivePGView(QWidget):
         # CH2 plot
         self.plot2 = pg.PlotWidget()
         self.plot2.setLabel("bottom", "Sample ID")
-        self.plot2.setLabel("left", "CH2")
+        self.plot2.setLabel("left", "CH2 (mV)")
         style_ecg_plot(self.plot2)
         self.curve2 = self.plot2.plot([], [], pen=pg.mkPen(color="black", width=2))
         layout.addWidget(self.plot2)
