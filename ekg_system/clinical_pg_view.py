@@ -2,7 +2,7 @@ import numpy as np
 import pyqtgraph as pg
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QSize, Qt
 
 import qtawesome as qta
 
@@ -28,6 +28,7 @@ class ClinicalPGView(QWidget):
         self.signal = signal
         self.fs = fs
         self.window_sec = window_sec
+        self.max_display_points = 20000  # Limit points for performance
 
         layout = QVBoxLayout(self)
 
@@ -38,16 +39,27 @@ class ClinicalPGView(QWidget):
         self.plot.setLabel("bottom", "Time (s)")
         self.plot.setLabel("left", "Amplitude (mV)")
         style_ecg_plot(self.plot)
+        
+        # Safe viewport update mode
+        try:
+            self.plot.setViewportUpdateMode(pg.ViewportUpdateMode.FullViewportUpdate)
+        except AttributeError:
+            try:
+                self.plot.setViewportUpdateMode(3)
+            except:
+                pass
 
-        t = np.arange(len(signal)) / fs
+        # Downsample signal for display
+        display_signal, display_t = self._downsample_for_display(signal)
+        
         self.curve = self.plot.plot(
-            t,
-            signal,
-            pen=pg.mkPen(color="black", width=2)
+            display_t,
+            display_signal,
+            pen=pg.mkPen(color="black", width=1.5)
         )
 
-        self.sig_min = float(np.min(signal))
-        self.sig_max = float(np.max(signal))
+        self.sig_min = float(np.min(display_signal))
+        self.sig_max = float(np.max(display_signal))
         self.plot.setYRange(self.sig_min, self.sig_max)
 
         self.duration = len(signal) / fs
@@ -55,9 +67,6 @@ class ClinicalPGView(QWidget):
         self.plot.setXRange(0, end)
 
         self.plot.sigRangeChanged.connect(self._fix_bounds)
-
-        nav_layout = QHBoxLayout()
-        layout.addLayout(nav_layout)
 
         nav_layout = QHBoxLayout()
         layout.addLayout(nav_layout)
@@ -86,6 +95,17 @@ class ClinicalPGView(QWidget):
         nav_layout.addStretch()
 
         self.plot.scene().sigMouseClicked.connect(self._check_double_click)
+
+    def _downsample_for_display(self, signal):
+        """Downsample signal to max_display_points for faster rendering"""
+        if len(signal) <= self.max_display_points:
+            t = np.arange(len(signal)) / self.fs
+            return signal, t
+        
+        step = len(signal) // self.max_display_points
+        downsampled = signal[::step]
+        t = np.arange(len(downsampled)) * step / self.fs
+        return downsampled, t
 
     def _fix_bounds(self, xmin=None, xmax=None):
         if xmin is None:

@@ -3,6 +3,7 @@
 
 import numpy as np
 from scipy.signal import butter, filtfilt, find_peaks
+import warnings
 
 
 class EKGProcessor:
@@ -12,8 +13,10 @@ class EKGProcessor:
         self.raw_data = None
         self.filtered_data = None
         self.peaks = None
-
-    def load_data(self, data_or_path):
+        self._filter_coefficients = None
+        self._last_filter_params = None
+        
+    def load_data(self, data_or_path, chunk_size=10000):
         # loads data either from a filename or already-loaded numpy array
         import pandas as pd
 
@@ -28,21 +31,42 @@ class EKGProcessor:
             self.raw_data = np.load(path)
             return
 
-        # csv/txt load using pandas (handles headers if present)
+        # csv/txt load using pandas with chunking for large files
         try:
-            df = pd.read_csv(path, comment="#")
-            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-
-            if not numeric_cols:
-                raise ValueError("No numeric columns found")
-
-            # some datasets include time + amplitude → use the amplitude column
-            if len(numeric_cols) >= 2:
-                data = df[numeric_cols[1]].to_numpy(dtype=float)
+            if path.endswith(".csv") and chunk_size:
+                # Chunked loading for large CSV files
+                chunks = pd.read_csv(path, comment="#", chunksize=chunk_size)
+                data_chunks = []
+                for chunk in chunks:
+                    numeric_cols = chunk.select_dtypes(include=[np.number]).columns.tolist()
+                    if not numeric_cols:
+                        continue
+                    
+                    if len(numeric_cols) >= 2:
+                        data_chunks.append(chunk[numeric_cols[1]].to_numpy(dtype=float))
+                    else:
+                        data_chunks.append(chunk[numeric_cols[0]].to_numpy(dtype=float))
+                
+                if data_chunks:
+                    self.raw_data = np.concatenate(data_chunks)
+                else:
+                    raise ValueError("No numeric data found")
             else:
-                data = df[numeric_cols[0]].to_numpy(dtype=float)
+                # Standard loading for smaller files
+                df = pd.read_csv(path, comment="#")
+                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
 
-            self.raw_data = data
+                if not numeric_cols:
+                    raise ValueError("No numeric columns found")
+
+                # some datasets include time + amplitude → use the amplitude column
+                if len(numeric_cols) >= 2:
+                    data = df[numeric_cols[1]].to_numpy(dtype=float)
+                else:
+                    data = df[numeric_cols[0]].to_numpy(dtype=float)
+
+                self.raw_data = data
+                
             self.filtered_data = None
             self.peaks = None
             return
@@ -65,15 +89,48 @@ class EKGProcessor:
         nyquist = 0.5 * self.sampling_rate
         low = lowcut / nyquist
         high = highcut / nyquist
-        return butter(order, [low, high], btype='band')
+        # Avoid invalid filter parameters
+        if low <= 0 or high >= 1 or low >= high:
+            low = max(0.001, low)
+            high = min(0.999, high)
+            if low >= high:
+                high = low + 0.1
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return butter(order, [low, high], btype='band')
 
     def filter_signal(self, lowcut=1.0, highcut=100.0):
         # apply a bandpass filter to remove noise + baseline drift
         if self.raw_data is None:
             raise ValueError("No data loaded")
-
-        b, a = self.butter_bandpass(lowcut, highcut)
-        self.filtered_data = filtfilt(b, a, self.raw_data)
+        
+        # Cache filter coefficients for performance
+        current_params = (lowcut, highcut, 4)  # order is fixed at 4
+        
+        if (self._last_filter_params != current_params or 
+            self._filter_coefficients is None):
+            b, a = self.butter_bandpass(lowcut, highcut)
+            self._filter_coefficients = (b, a)
+            self._last_filter_params = current_params
+        else:
+            b, a = self._filter_coefficients
+        
+        # Process in chunks for large signals to save memory
+        if len(self.raw_data) > 50000:
+            chunk_size = 50000
+            overlap = 1000
+            filtered_chunks = []
+            
+            for i in range(0, len(self.raw_data), chunk_size - overlap):
+                chunk = self.raw_data[i:i + chunk_size]
+                filtered_chunk = filtfilt(b, a, chunk)
+                if i > 0:
+                    filtered_chunk = filtered_chunk[overlap:]
+                filtered_chunks.append(filtered_chunk)
+            
+            self.filtered_data = np.concatenate(filtered_chunks)
+        else:
+            self.filtered_data = filtfilt(b, a, self.raw_data)
 
     def detect_r_peaks(self, height_factor=0.5, distance_ms=50):
         # basic peak picking using scipy's find_peaks
@@ -82,12 +139,15 @@ class EKGProcessor:
 
         distance_samples = int((distance_ms / 1000.0) * self.sampling_rate)
         threshold = np.max(self.filtered_data) * height_factor
+        min_height = np.std(self.filtered_data) * 1.5
 
         # returns peak indices where heart beats occur
-        peaks, _ = find_peaks(
+        peaks, properties = find_peaks(
             self.filtered_data,
-            height=threshold,
-            distance=distance_samples
+            height=max(threshold, min_height),
+            distance=distance_samples,
+            prominence=np.std(self.filtered_data) * 0.3,
+            wlen=int(self.sampling_rate * 0.1)
         )
         self.peaks = peaks
         return peaks

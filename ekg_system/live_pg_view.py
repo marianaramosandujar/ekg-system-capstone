@@ -4,6 +4,7 @@ from datetime import datetime
 import numpy as np
 import pyqtgraph as pg
 import queue
+import platform
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QHBoxLayout
 from PySide6.QtCore import QTimer, Qt, QUrl, QSize
@@ -43,6 +44,8 @@ class LivePGView(QWidget):
         self.ch2_data = []
 
         self._q = queue.SimpleQueue()
+        self._update_counter = 0
+        self._is_running = True
 
         self.mcu = MSP430Interface(mode="binary")
         self.device_connected = False
@@ -64,7 +67,17 @@ class LivePGView(QWidget):
         self.plot1.setLabel("bottom", "Sample ID")
         self.plot1.setLabel("left", "CH1")
         style_ecg_plot(self.plot1)
-        self.curve1 = self.plot1.plot([], [], pen=pg.mkPen(color="black", width=2))
+        
+        # Safe viewport update mode
+        try:
+            self.plot1.setViewportUpdateMode(pg.ViewportUpdateMode.FullViewportUpdate)
+        except AttributeError:
+            try:
+                self.plot1.setViewportUpdateMode(3)
+            except:
+                pass
+        
+        self.curve1 = self.plot1.plot([], [], pen=pg.mkPen(color="black", width=1.5))
         layout.addWidget(self.plot1)
 
         # CH2 plot
@@ -72,7 +85,17 @@ class LivePGView(QWidget):
         self.plot2.setLabel("bottom", "Sample ID")
         self.plot2.setLabel("left", "CH2")
         style_ecg_plot(self.plot2)
-        self.curve2 = self.plot2.plot([], [], pen=pg.mkPen(color="black", width=2))
+        
+        # Safe viewport update mode
+        try:
+            self.plot2.setViewportUpdateMode(pg.ViewportUpdateMode.FullViewportUpdate)
+        except AttributeError:
+            try:
+                self.plot2.setViewportUpdateMode(3)
+            except:
+                pass
+        
+        self.curve2 = self.plot2.plot([], [], pen=pg.mkPen(color="black", width=1.5))
         layout.addWidget(self.plot2)
 
         controls = QHBoxLayout()
@@ -95,9 +118,15 @@ class LivePGView(QWidget):
 
         layout.addLayout(controls)
 
+        # Adjust timer intervals based on platform
+        if platform.system() == 'Darwin':  # macOS
+            plot_interval = 100  # 10 FPS on macOS
+        else:
+            plot_interval = 50   # 20 FPS on Windows
+
         self.plot_timer = QTimer(self)
         self.plot_timer.timeout.connect(self.update_plot)
-        self.plot_timer.start(40)
+        self.plot_timer.start(plot_interval)
 
         self.detect_timer = QTimer(self)
         self.detect_timer.timeout.connect(self.check_device)
@@ -110,6 +139,9 @@ class LivePGView(QWidget):
         self.plot2.autoRange()
 
     def check_device(self):
+        if not self._is_running:
+            return
+            
         if not self.device_connected:
             port = self.mcu.detect_port()
 
@@ -130,6 +162,9 @@ class LivePGView(QWidget):
             self.button.setIcon(qta.icon("fa5s.play"))
 
     def toggle_collection(self):
+        if not self._is_running:
+            return
+            
         self.want_collecting = not self.want_collecting
         self._update_collect_button()
 
@@ -169,7 +204,7 @@ class LivePGView(QWidget):
             QDesktopServices.openUrl(QUrl.fromLocalFile(self.csv_path))
 
     def start_hardware(self):
-        if self.collecting:
+        if self.collecting or not self._is_running:
             return
 
         self._reset_buffers()
@@ -189,23 +224,33 @@ class LivePGView(QWidget):
         self.ch1_data = []
         self.ch2_data = []
         self.samples_seen = 0
+        self._update_counter = 0
 
         self.curve1.setData([], [])
         self.curve2.setData([], [])
 
         while not self._q.empty():
-            self._q.get()
+            try:
+                self._q.get_nowait()
+            except queue.Empty:
+                break
 
     def on_sample(self, sid, ch1, ch2, t_wall):
-        self._q.put((sid, ch1, ch2))
+        if self._is_running:
+            self._q.put((sid, ch1, ch2))
 
     def update_plot(self):
-        drained = 0
-
-        while True:
+        if not self._is_running:
+            return
+            
+        # Limit samples processed per frame to prevent UI freezing
+        max_samples_per_frame = 500
+        processed = 0
+        
+        while processed < max_samples_per_frame:
             try:
                 sid, ch1, ch2 = self._q.get_nowait()
-            except Exception:
+            except queue.Empty:
                 break
 
             if self._csv_w:
@@ -215,35 +260,70 @@ class LivePGView(QWidget):
             self.sid_data.append(sid)
             self.ch1_data.append(ch1)
             self.ch2_data.append(ch2)
-            drained += 1
+            processed += 1
 
-        if drained == 0:
+        if processed == 0:
             return
 
-        x = np.asarray(self.sid_data)
-        y1 = np.asarray(self.ch1_data)
-        y2 = np.asarray(self.ch2_data)
+        # Update plot less frequently for better performance
+        self._update_counter += processed
+        if self._update_counter < 100 and len(self.sid_data) < self.display_samples:
+            # Only update status, not plot
+            if self.csv_path:
+                self.status.setText(f"Saving to {os.path.basename(self.csv_path)}")
+            return
+        
+        self._update_counter = 0
+        
+        # Update display
+        if len(self.sid_data) > 0:
+            x = np.asarray(self.sid_data)
+            y1 = np.asarray(self.ch1_data)
+            y2 = np.asarray(self.ch2_data)
 
-        if len(x) > self.display_samples:
-            x = x[-self.display_samples:]
-            y1 = y1[-self.display_samples:]
-            y2 = y2[-self.display_samples:]
+            if len(x) > self.display_samples:
+                x = x[-self.display_samples:]
+                y1 = y1[-self.display_samples:]
+                y2 = y2[-self.display_samples:]
 
-        self.curve1.setData(x, y1)
-        self.curve2.setData(x, y2)
+            self.curve1.setData(x, y1)
+            self.curve2.setData(x, y2)
 
-        self.plot1.setXRange(x[0], x[-1], padding=0)
-        self.plot2.setXRange(x[0], x[-1], padding=0)
+            if len(x) > 1:
+                self.plot1.setXRange(x[0], x[-1], padding=0)
+                self.plot2.setXRange(x[0], x[-1], padding=0)
 
-        self.plot1.enableAutoRange(axis="y")
-        self.plot2.enableAutoRange(axis="y")
+            self.plot1.enableAutoRange(axis="y")
+            self.plot2.enableAutoRange(axis="y")
 
         if self.csv_path:
             self.status.setText(f"Saving to {os.path.basename(self.csv_path)}")
 
     def stop(self):
+        """Complete shutdown of all live view activities"""
+        self._is_running = False
         self.want_collecting = False
+        
+        # Stop all timers
+        if self.plot_timer:
+            self.plot_timer.stop()
+        if self.detect_timer:
+            self.detect_timer.stop()
+            
+        # Stop hardware
         self.stop_hardware()
+        
+        # Clear data buffers
+        self.sid_data = []
+        self.ch1_data = []
+        self.ch2_data = []
+        
+        # Clear queue
+        while not self._q.empty():
+            try:
+                self._q.get_nowait()
+            except:
+                pass
 
         self.button.setText("Start Collecting")
         self.button.setIcon(qta.icon("fa5s.play"))
