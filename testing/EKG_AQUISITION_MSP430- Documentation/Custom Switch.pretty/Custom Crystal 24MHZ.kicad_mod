@@ -1,0 +1,94 @@
+(footprint "Custom Crystal 24MHZ"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(property "Reference" "24MHz Crystal"
+		(at 0 -4 0)
+		(unlocked yes)
+		(layer "F.SilkS")
+		(uuid "c1a0a402-6725-42cb-a23a-121f6a9dd190")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.1)
+			)
+		)
+	)
+	(property "Value" "Custom Crystal 24MHZ"
+		(at 0 1 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "ed7e5906-55ae-4f4e-9c52-966bca970893")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "ffc0e846-ecaf-4f5a-9e5e-7b849b36cf14")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "d7f81b0b-e2fa-49e8-8a3b-59f4d986d1bb")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(fp_rect
+		(start -3.048 -1.905)
+		(end 3.048 1.905)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "0fa8bf45-c79b-420f-8c20-c69bea159938")
+	)
+	(pad "1" smd rect
+		(at -2.032 1.1938)
+		(size 1.8542 1.27)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "d2f8bf81-8533-45d4-b63c-a80091cdd7d6")
+	)
+	(pad "2" smd rect
+		(at 2.032 1.1938)
+		(size 1.8542 1.27)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "11a7539c-b0e5-46a0-96d5-91f7ae30ef42")
+	)
+	(pad "3" smd rect
+		(at 2.032 -1.1938)
+		(size 1.8542 1.27)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "04b1e862-3aa0-4bc6-8f57-095e88c21552")
+	)
+	(pad "4" smd rect
+		(at -2.032 -1.1938)
+		(size 1.8542 1.27)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "f572b479-7f75-47b5-b0fe-1d65a0845a30")
+	)
+	(embedded_fonts no)
+)
