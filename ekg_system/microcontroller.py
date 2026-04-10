@@ -192,7 +192,7 @@ class MSP430Interface:
                     ch2_mv = self.code_to_mv(ch2)
 
                     if self.callback:
-                        self.callback(int(sid), int(ch1), int(ch2), time.time())
+                        self.callback(int(sid), int(ch1_mv), int(ch2_mv), time.time())
 
             except Exception:
                 self.running = False
