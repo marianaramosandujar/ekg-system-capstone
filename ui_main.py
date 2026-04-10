@@ -26,14 +26,15 @@ def style_ecg_plot(plot_widget):
 
 
 class EKGApp(QWidget):
-    # main UI app
     def __init__(self):
         super().__init__()
+
         self.setWindowTitle("EKG Analysis System")
         self.setGeometry(100, 100, 1200, 800)
 
         self.processor = EKGProcessor(sampling_rate=1000)
         self.detector = ArrhythmiaDetector(sampling_rate=1000)
+
         self.data = None
         self.last_bpm = None
 
@@ -43,7 +44,6 @@ class EKGApp(QWidget):
 
         self.live_btn = QPushButton("Live View")
         self.live_btn.setFixedSize(200, 50)
-        self.live_btn.setEnabled(True)
         self.live_btn.clicked.connect(self.show_live_view)
 
         self.load_btn = QPushButton("Load EKG File")
@@ -75,7 +75,7 @@ class EKGApp(QWidget):
 
         main_layout.addLayout(row)
 
-        self.label = QLabel("Select Live View to begin live acquisition.")
+        self.label = QLabel("Load an EKG file or select Live View.")
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setStyleSheet("font-size: 16px; padding: 8px;")
         main_layout.addWidget(self.label)
@@ -86,36 +86,90 @@ class EKGApp(QWidget):
         style_ecg_plot(self.plot_widget)
         main_layout.addWidget(self.plot_widget)
 
-        self.live_view = LivePGView(
-            parent=self,
-            fs=1000,
-            window_sec=10
-        )
-        self.live_view.hide()
-        main_layout.addWidget(self.live_view)
-
+        self.live_view = None
         self.clinical_view = None
 
-        # START APP IN LIVE VIEW
-        self.show_live_view()
+        self.show_standard_view()
 
+    def show_standard_view(self):
+        if self.live_view:
+            self.live_view.hide()
 
-    def reset_zoom(self):
-        if self.clinical_view and self.clinical_view.isVisible():
-            self.clinical_view.reset_view()
+        if self.clinical_view:
+            self.clinical_view.hide()
 
-        elif self.live_view.isVisible():
-            self.live_view.reset_view()
+        self.plot_widget.show()
+        self.label.show()
 
-        else:
-            self.plot_widget.enableAutoRange(x=True, y=True)
-            self.plot_widget.autoRange()
+        if self.data is None:
+            self.plot_widget.clear()
+            return
 
+        fs = self.processor.sampling_rate
+        t = np.arange(len(self.data)) / fs
+
+        self.plot_widget.clear()
+        self.plot_widget.plot(
+            t,
+            self.data,
+            pen=pg.mkPen(color="black", width=1.2)
+        )
+
+        style_ecg_plot(self.plot_widget)
+        self.plot_widget.setXRange(0, min(10, len(self.data) / fs), padding=0)
+        self.plot_widget.enableAutoRange(axis="y")
+
+    def show_live_view(self):
+        if self.clinical_view:
+            self.clinical_view.hide()
+
+        if self.live_view is None:
+            self.live_view = LivePGView(
+                parent=self,
+                fs=1000,
+                window_sec=10
+            )
+            self.layout().addWidget(self.live_view)
+
+        self.plot_widget.hide()
+        self.label.hide()
+        self.live_view.show()
+
+    def show_clinical_view(self):
+        if self.data is None:
+            return
+
+        if self.live_view:
+            self.live_view.hide()
+
+        if self.clinical_view:
+            self.clinical_view.setParent(None)
+            self.clinical_view.deleteLater()
+
+        signal_to_show = (
+            self.processor.filtered_data
+            if self.processor.filtered_data is not None
+            else self.data
+        )
+
+        self.clinical_view = ClinicalPGView(
+            parent=self,
+            signal=signal_to_show,
+            fs=self.processor.sampling_rate,
+            window_sec=10
+        )
+
+        self.layout().addWidget(self.clinical_view)
+
+        self.plot_widget.hide()
+        self.label.hide()
+        self.clinical_view.show()
 
     def load_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Select EKG File", "", "CSV/TXT/NPY (*.csv *.txt *.npy)"
         )
+
         if not path:
             return
 
@@ -130,44 +184,18 @@ class EKGApp(QWidget):
             self.analyze_btn.setEnabled(True)
             self.clinical_btn.setEnabled(True)
 
-            if self.clinical_view:
-                self.clinical_view.setParent(None)
-                self.clinical_view = None
-
             self.show_standard_view()
 
         except Exception as e:
             self.label.setText(f"Error: {e}")
 
-
-    def show_standard_view(self):
-        if self.clinical_view:
-            self.clinical_view.hide()
-
-        self.live_view.hide()
-        self.plot_widget.show()
-        self.label.show()
-
-        if self.data is None:
-            return
-
-        fs = self.processor.sampling_rate
-        t = np.arange(len(self.data)) / fs
-
-        self.plot_widget.clear()
-        self.plot_widget.plot(
-            t,
-            self.data,
-            pen=pg.mkPen(color="black", width=2)
-        )
-        style_ecg_plot(self.plot_widget)
-
-
     def analyze_signal(self):
         if self.data is None:
             return
 
-        self.live_view.hide()
+        if self.live_view:
+            self.live_view.hide()
+
         if self.clinical_view:
             self.clinical_view.hide()
 
@@ -176,84 +204,85 @@ class EKGApp(QWidget):
 
         try:
             self.processor.filter_signal()
-            self.processor.detect_r_peaks()
+            peaks = self.processor.detect_r_peaks()
 
-            rr = self.processor.peaks[1:] - self.processor.peaks[:-1]
+            if peaks is None or len(peaks) < 2:
+                raise RuntimeError("Not enough peaks detected to calculate BPM")
+
+            rr = peaks[1:] - peaks[:-1]
             waves = self.processor.segment_waveforms()
-            report = self.detector.generate_report(
-                rr, waves, self.processor.peaks
-            )
+
+            report = self.detector.generate_report(rr, waves, peaks)
 
             self.last_bpm = report["mean_heart_rate"]
             arr = report["arrhythmias_detected"]
 
             self.label.setText(
-                f"HR: {self.last_bpm:.1f} BPM | Arrhythmias: {arr}"
+                f"HR: {self.last_bpm:.1f} BPM | Arrhythmias: {arr} | Peaks: {len(peaks)}"
             )
 
             fs = self.processor.sampling_rate
-            t = np.arange(len(self.processor.filtered_data)) / fs
+            signal = self.processor.filtered_data
+            t = np.arange(len(signal)) / fs
+            display_signal = signal
 
             self.plot_widget.clear()
+
             self.plot_widget.plot(
                 t,
-                self.processor.filtered_data,
-                pen=pg.mkPen(color="black", width=2)
+                display_signal,
+                pen=pg.mkPen(color="black", width=1.2)
             )
 
             self.plot_widget.plot(
-                self.processor.peaks / fs,
-                self.processor.filtered_data[self.processor.peaks],
+                peaks / fs,
+                display_signal[peaks],
                 pen=None,
                 symbol="o",
                 symbolBrush="r",
-                symbolSize=8
+                symbolPen="r",
+                symbolSize=5
             )
 
             style_ecg_plot(self.plot_widget)
+            self.plot_widget.setXRange(0, min(10, len(signal) / fs), padding=0)
+            self.plot_widget.enableAutoRange(axis="y")
 
         except Exception as e:
             self.label.setText(f"Error analyzing: {e}")
 
+    def reset_zoom(self):
+        if self.clinical_view and self.clinical_view.isVisible():
+            self.clinical_view.reset_view()
 
-    # -----------------------------------------
-    # Clinical View
-    # -----------------------------------------
-    def show_clinical_view(self):
-        if self.data is None:
-            return
+        elif self.live_view and self.live_view.isVisible():
+            self.live_view.reset_view()
 
-        self.live_view.hide()
-        self.plot_widget.hide()
-        self.label.hide()
-
-        if not self.clinical_view:
-            self.clinical_view = ClinicalPGView(
-                parent=self,
-                signal=self.data,
-                fs=self.processor.sampling_rate,
-                window_sec=10
+        elif self.processor.filtered_data is not None:
+            fs = self.processor.sampling_rate
+            self.plot_widget.setXRange(
+                0,
+                min(10, len(self.processor.filtered_data) / fs),
+                padding=0
             )
-            self.layout().addWidget(self.clinical_view)
+            self.plot_widget.enableAutoRange(axis="y")
 
-        self.clinical_view.show()
+        elif self.data is not None:
+            fs = self.processor.sampling_rate
+            self.plot_widget.setXRange(
+                0,
+                min(10, len(self.data) / fs),
+                padding=0
+            )
+            self.plot_widget.enableAutoRange(axis="y")
 
-
-    # -----------------------------------------
-    # Live View
-    # -----------------------------------------
-    def show_live_view(self):
-        if self.clinical_view:
-            self.clinical_view.hide()
-
-        self.plot_widget.hide()
-        self.label.hide()
-
-        self.live_view.show()
-
+        else:
+            self.plot_widget.enableAutoRange(x=True, y=True)
+            self.plot_widget.autoRange()
 
     def closeEvent(self, event):
-        self.live_view.stop()
+        if self.live_view:
+            self.live_view.stop()
         event.accept()
 
 
